@@ -36,6 +36,11 @@ typedef enum {
     TOK_NOT,        /* not                              */
     TOK_PRINT,      /* print  (built-in statement)      */
     TOK_IMPORT,     /* import (load a stdlib module)     */
+    TOK_TRY,        /* try                               */
+    TOK_CATCH,      /* catch                             */
+    TOK_THROW,      /* throw                             */
+    TOK_CLASS,      /* class                             */
+    TOK_SELF,       /* self                              */
 
     /* ── Arithmetic operators ──────────────────────── */
     TOK_PLUS,       /* +                                */
@@ -114,6 +119,11 @@ static inline const char* token_type_name(TokenType t) {
         case TOK_NOT:       return "NOT";
         case TOK_PRINT:     return "PRINT";
         case TOK_IMPORT:    return "IMPORT";
+        case TOK_TRY:       return "TRY";
+        case TOK_CATCH:     return "CATCH";
+        case TOK_THROW:     return "THROW";
+        case TOK_CLASS:     return "CLASS";
+        case TOK_SELF:      return "SELF";
         case TOK_PLUS:      return "PLUS";
         case TOK_MINUS:     return "MINUS";
         case TOK_STAR:      return "STAR";

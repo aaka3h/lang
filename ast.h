@@ -39,6 +39,17 @@ typedef enum {
     NODE_BINOP,     /* a + b, a * b, a == b   */
     NODE_UNARY,     /* -x, not x              */
     NODE_CALL,      /* add(1, 2)              */
+    NODE_ARRAY,     /* [1, 2, 3]              */
+    NODE_INDEX,     /* a[0]                   */
+    NODE_INDEX_ASSIGN, /* a[0] = 5            */
+    NODE_DICT,      /* {"k": v, ...}          */
+    NODE_TRY,       /* try { } catch (e) { }  */
+    NODE_THROW,     /* throw expr              */
+    NODE_CLASS_DEF, /* class Foo { fn ... }   */
+    NODE_NEW,       /* Foo(args)  — same as call but creates instance */
+    NODE_GET_ATTR,  /* obj.field               */
+    NODE_SET_ATTR,  /* obj.field = val         */
+    NODE_SELF,      /* self                    */
 
     /* ── Statements ────────────────── */
     NODE_IMPORT,    /* import "module"         */
@@ -128,6 +139,62 @@ struct Node {
 
         /* NODE_IMPORT */
         struct { char module[MAX_NAME]; } import_stmt;
+
+        /* NODE_ARRAY */
+        struct {
+            Node *elements[256];
+            int   count;
+        } array;
+
+        /* NODE_INDEX */
+        struct {
+            char  name[MAX_NAME];
+            Node *index;
+        } index_expr;
+
+        /* NODE_INDEX_ASSIGN */
+        struct {
+            char  name[MAX_NAME];
+            Node *index;
+            Node *value;
+        } index_assign;
+
+        /* NODE_DICT */
+        struct {
+            char  keys[64][MAX_NAME];
+            Node *values[64];
+            int   count;
+        } dict;
+
+        /* NODE_TRY */
+        struct {
+            Node *try_block;
+            char  err_name[MAX_NAME];
+            Node *catch_block;
+        } try_stmt;
+
+        /* NODE_THROW */
+        struct { Node *value; } throw_stmt;
+
+        /* NODE_CLASS_DEF */
+        struct {
+            char  name[MAX_NAME];
+            Node *methods[32];    /* each is a NODE_FN_DEF */
+            int   method_count;
+        } class_def;
+
+        /* NODE_GET_ATTR — obj.field */
+        struct {
+            Node *object;
+            char  field[MAX_NAME];
+        } get_attr;
+
+        /* NODE_SET_ATTR — obj.field = val */
+        struct {
+            Node *object;
+            char  field[MAX_NAME];
+            Node *value;
+        } set_attr;
 
         /* NODE_PRINT — print expr */
         struct { Node *value; } print_stmt;

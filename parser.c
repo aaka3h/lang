@@ -283,6 +283,128 @@ static Node *parse_import(Parser *p) {
     return n;
 }
 
+
+/*
+   parse_array — [expr, expr, ...]
+*/
+static Node *parse_array(Parser *p) {
+    Token bracket = advance(p);  /* consume [ */
+    Node *n = node_alloc(NODE_ARRAY, bracket.line, bracket.col);
+    n->as.array.count = 0;
+
+    skip_newlines(p);
+    if (!check(p, TOK_RBRACKET)) {
+        n->as.array.elements[n->as.array.count++] = parse_expr(p);
+        while (!p->error && match(p, TOK_COMMA)) {
+            skip_newlines(p);
+            if (check(p, TOK_RBRACKET)) break;
+            if (n->as.array.count >= 256) { p->error=1; return NULL; }
+            n->as.array.elements[n->as.array.count++] = parse_expr(p);
+        }
+    }
+    expect(p, TOK_RBRACKET, "']'");
+    return n;
+}
+
+
+/*
+   parse_dict — {"key": expr, ...}
+   Keys must be string literals.
+*/
+static Node *parse_dict(Parser *p) {
+    Token brace = advance(p);  /* consume { */
+    Node *n = node_alloc(NODE_DICT, brace.line, brace.col);
+    n->as.dict.count = 0;
+
+    skip_newlines(p);
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF) && !p->error) {
+        /* key must be a string */
+        if (!check(p, TOK_STRING)) {
+            snprintf(p->errmsg, sizeof(p->errmsg),
+                     "Line %d: dict key must be a string", cur(p).line);
+            p->error = 1; return NULL;
+        }
+        Token key = advance(p);
+        strncpy(n->as.dict.keys[n->as.dict.count], key.value, MAX_NAME-1);
+        expect(p, TOK_COLON, "':'");
+        n->as.dict.values[n->as.dict.count] = parse_expr(p);
+        n->as.dict.count++;
+        skip_newlines(p);
+        if (!match(p, TOK_COMMA)) break;
+        skip_newlines(p);
+    }
+    expect(p, TOK_RBRACE, "'}'");
+    return n;
+}
+
+
+static Node *parse_try(Parser *p) {
+    Token kw = advance(p);  /* consume 'try' */
+    Node *try_block = parse_block(p);
+    if (p->error) return NULL;
+
+    /* catch (varname) { block } */
+    skip_newlines(p);
+    if (!check(p, TOK_CATCH)) {
+        snprintf(p->errmsg, sizeof(p->errmsg),
+                 "Line %d: expected 'catch' after try block", cur(p).line);
+        p->error = 1; return NULL;
+    }
+    advance(p);  /* consume 'catch' */
+    expect(p, TOK_LPAREN, "'('");
+    Token err_name = expect(p, TOK_IDENT, "error variable name");
+    expect(p, TOK_RPAREN, "')'");
+    Node *catch_block = parse_block(p);
+    if (p->error) return NULL;
+
+    Node *n = node_alloc(NODE_TRY, kw.line, kw.col);
+    n->as.try_stmt.try_block   = try_block;
+    n->as.try_stmt.catch_block = catch_block;
+    strncpy(n->as.try_stmt.err_name, err_name.value, MAX_NAME-1);
+    return n;
+}
+
+static Node *parse_throw(Parser *p) {
+    Token kw = advance(p);  /* consume 'throw' */
+    Node *val = parse_expr(p);
+    if (p->error) return NULL;
+    Node *n = node_alloc(NODE_THROW, kw.line, kw.col);
+    n->as.throw_stmt.value = val;
+    return n;
+}
+
+
+/*
+   parse_class — class Name { fn method(...) { } ... }
+*/
+static Node *parse_class(Parser *p) {
+    Token kw = advance(p);  /* consume 'class' */
+    Token name = expect(p, TOK_IDENT, "class name");
+    expect(p, TOK_LBRACE, "'{'");
+    skip_newlines(p);
+
+    Node *n = node_alloc(NODE_CLASS_DEF, kw.line, kw.col);
+    strncpy(n->as.class_def.name, name.value, MAX_NAME-1);
+    n->as.class_def.method_count = 0;
+
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF) && !p->error) {
+        skip_newlines(p);
+        if (check(p, TOK_RBRACE)) break;
+        if (!check(p, TOK_FN)) {
+            snprintf(p->errmsg, sizeof(p->errmsg),
+                "Line %d: expected 'fn' in class body", cur(p).line);
+            p->error = 1; return NULL;
+        }
+        Node *method = parse_fn_def(p);
+        if (p->error) return NULL;
+        if (n->as.class_def.method_count < 32)
+            n->as.class_def.methods[n->as.class_def.method_count++] = method;
+        skip_newlines(p);
+    }
+    expect(p, TOK_RBRACE, "'}'");
+    return n;
+}
+
 static Node *parse_block(Parser *p) {
     Token brace = expect(p, TOK_LBRACE, "'{'");
     if (p->error) return NULL;
@@ -311,6 +433,9 @@ static Node *parse_stmt(Parser *p) {
 
     /* keywords */
     if (check(p, TOK_IMPORT)) return parse_import(p);
+    if (check(p, TOK_TRY))    return parse_try(p);
+    if (check(p, TOK_CLASS))  return parse_class(p);
+    if (check(p, TOK_THROW))  return parse_throw(p);
     if (check(p, TOK_LET))    return parse_let(p);
     if (check(p, TOK_PRINT))  return parse_print(p);
     if (check(p, TOK_RETURN)) return parse_return(p);
@@ -464,6 +589,69 @@ static Node *parse_unary(Parser *p) {
    Otherwise fall through to primary.
 */
 static Node *parse_call_or_primary(Parser *p) {
+    /* obj.field or obj.method() */
+    if (check(p, TOK_IDENT) && peek_next(p).type == TOK_DOT) {
+        Token obj_name = advance(p);  /* ident */
+        advance(p);                   /* consume . */
+        Token field = expect(p, TOK_IDENT, "field name");
+        if (p->error) return NULL;
+
+        Node *obj_node = node_alloc(NODE_IDENT, obj_name.line, obj_name.col);
+        strncpy(obj_node->as.ident.name, obj_name.value, MAX_NAME-1);
+
+        if (check(p, TOK_LPAREN)) {
+            advance(p);
+            Node *call = node_alloc(NODE_CALL, field.line, field.col);
+            char mname[MAX_NAME];
+            snprintf(mname, MAX_NAME-1, "%s.%s", obj_name.value, field.value);
+            strncpy(call->as.call.name, mname, MAX_NAME-1);
+            call->as.call.arg_count = 0;
+            if (!check(p, TOK_RPAREN)) {
+                call->as.call.args[call->as.call.arg_count++] = parse_expr(p);
+                while (!p->error && match(p, TOK_COMMA))
+                    call->as.call.args[call->as.call.arg_count++] = parse_expr(p);
+            }
+            expect(p, TOK_RPAREN, "')'");
+            return call;
+        }
+        /* obj.field = val */
+        if (check(p, TOK_EQ) && peek_next(p).type != TOK_EQ) {
+            advance(p);
+            Node *val = parse_expr(p);
+            Node *sa = node_alloc(NODE_SET_ATTR, field.line, field.col);
+            sa->as.set_attr.object = obj_node;
+            strncpy(sa->as.set_attr.field, field.value, MAX_NAME-1);
+            sa->as.set_attr.value = val;
+            return sa;
+        }
+        /* obj.field read */
+        Node *ga = node_alloc(NODE_GET_ATTR, field.line, field.col);
+        ga->as.get_attr.object = obj_node;
+        strncpy(ga->as.get_attr.field, field.value, MAX_NAME-1);
+        return ga;
+    }
+
+    /* index assign: a[i] = v */
+    if (check(p, TOK_IDENT) && peek_next(p).type == TOK_LBRACKET) {
+        Token name = advance(p);
+        advance(p);  /* consume [ */
+        Node *idx = parse_expr(p);
+        expect(p, TOK_RBRACKET, "']'");
+        if (!p->error && check(p, TOK_EQ) && peek_next(p).type != TOK_EQ) {
+            advance(p);  /* consume = */
+            Node *val = parse_expr(p);
+            Node *n = node_alloc(NODE_INDEX_ASSIGN, name.line, name.col);
+            strncpy(n->as.index_assign.name, name.value, MAX_NAME-1);
+            n->as.index_assign.index = idx;
+            n->as.index_assign.value = val;
+            return n;
+        }
+        Node *n = node_alloc(NODE_INDEX, name.line, name.col);
+        strncpy(n->as.index_expr.name, name.value, MAX_NAME-1);
+        n->as.index_expr.index = idx;
+        return n;
+    }
+
     if (check(p, TOK_IDENT) && peek_next(p).type == TOK_LPAREN) {
         Token name = advance(p);  /* consume function name */
         advance(p);               /* consume '(' */
@@ -549,6 +737,56 @@ static Node *parse_primary(Parser *p) {
         strncpy(n->as.ident.name, t.value, MAX_NAME - 1);
         return n;
     }
+
+    /* self keyword */
+    if (t.type == TOK_SELF) {
+        advance(p);
+        Node *self_node = node_alloc(NODE_SELF, t.line, t.col);
+        /* self.field or self.method() */
+        if (check(p, TOK_DOT)) {
+            advance(p);
+            Token field = expect(p, TOK_IDENT, "field name");
+            if (check(p, TOK_LPAREN)) {
+                /* self.method(args) - treat as call with self */
+                advance(p); /* consume ( */
+                Node *call = node_alloc(NODE_CALL, field.line, field.col);
+                /* encode as "self.method" */
+                char mname[MAX_NAME];
+                snprintf(mname, MAX_NAME-1, "__self__.%s", field.value);
+                strncpy(call->as.call.name, mname, MAX_NAME-1);
+                call->as.call.arg_count = 0;
+                if (!check(p, TOK_RPAREN)) {
+                    call->as.call.args[call->as.call.arg_count++] = parse_expr(p);
+                    while (!p->error && match(p, TOK_COMMA))
+                        call->as.call.args[call->as.call.arg_count++] = parse_expr(p);
+                }
+                expect(p, TOK_RPAREN, "')'");
+                return call;
+            }
+            /* self.field = val */
+            if (check(p, TOK_EQ) && peek_next(p).type != TOK_EQ) {
+                advance(p);
+                Node *val = parse_expr(p);
+                Node *sa = node_alloc(NODE_SET_ATTR, field.line, field.col);
+                sa->as.set_attr.object = self_node;
+                strncpy(sa->as.set_attr.field, field.value, MAX_NAME-1);
+                sa->as.set_attr.value = val;
+                return sa;
+            }
+            /* self.field (read) */
+            Node *ga = node_alloc(NODE_GET_ATTR, field.line, field.col);
+            ga->as.get_attr.object = self_node;
+            strncpy(ga->as.get_attr.field, field.value, MAX_NAME-1);
+            return ga;
+        }
+        return self_node;
+    }
+
+    /* Array literal */
+    if (t.type == TOK_LBRACKET) return parse_array(p);
+
+    /* Dict literal */
+    if (t.type == TOK_LBRACE) return parse_dict(p);
 
     /* Grouped expression: ( expr ) */
     if (t.type == TOK_LPAREN) {
@@ -657,6 +895,48 @@ void ast_print(Node *n, int indent) {
             for (int i = 0; i < n->as.call.arg_count; i++)
                 ast_print(n->as.call.args[i], indent + 1);
             break;
+        case NODE_CLASS_DEF:
+            printf("ClassDef(%s, %d methods)\n",
+                   n->as.class_def.name, n->as.class_def.method_count);
+            for (int i=0;i<n->as.class_def.method_count;i++)
+                ast_print(n->as.class_def.methods[i], indent+1);
+            break;
+        case NODE_GET_ATTR:
+            printf("GetAttr(.%s)\n", n->as.get_attr.field);
+            ast_print(n->as.get_attr.object, indent+1); break;
+        case NODE_SET_ATTR:
+            printf("SetAttr(.%s)\n", n->as.set_attr.field);
+            ast_print(n->as.set_attr.object, indent+1);
+            ast_print(n->as.set_attr.value,  indent+1); break;
+        case NODE_SELF:
+            printf("Self\n"); break;
+        case NODE_TRY:
+            printf("Try(catch=%s)\n", n->as.try_stmt.err_name);
+            ast_print(n->as.try_stmt.try_block,   indent+1);
+            ast_print(n->as.try_stmt.catch_block,  indent+1);
+            break;
+        case NODE_THROW:
+            printf("Throw\n");
+            ast_print(n->as.throw_stmt.value, indent+1);
+            break;
+        case NODE_DICT:
+            printf("Dict(%d)\n", n->as.dict.count);
+            for (int i=0;i<n->as.dict.count;i++) {
+                print_indent(indent+1); printf("key: %s\n", n->as.dict.keys[i]);
+                ast_print(n->as.dict.values[i], indent+2);
+            }
+            break;
+        case NODE_ARRAY:
+            printf("Array(%d)\n", n->as.array.count);
+            for (int i=0;i<n->as.array.count;i++) ast_print(n->as.array.elements[i], indent+1);
+            break;
+        case NODE_INDEX:
+            printf("Index(%s)\n", n->as.index_expr.name);
+            ast_print(n->as.index_expr.index, indent+1); break;
+        case NODE_INDEX_ASSIGN:
+            printf("IndexAssign(%s)\n", n->as.index_assign.name);
+            ast_print(n->as.index_assign.index, indent+1);
+            ast_print(n->as.index_assign.value, indent+1); break;
         case NODE_IMPORT:
             printf("Import(\"%s\")\n", n->as.import_stmt.module); break;
         case NODE_PRINT:

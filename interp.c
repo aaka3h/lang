@@ -32,11 +32,19 @@
 static int    g_returning = 0;
 static Value  g_return_val;
 
-/* Set a runtime error */
+static int    g_throwing  = 0;   /* 1 when a throw/error is in flight */
+static Value  g_throw_val;       /* the thrown value                  */
+
+/* Set a runtime error — also triggers throw so try/catch can intercept */
 static Value runtime_error(Interpreter *interp, const char *msg) {
     if (!interp->error) {
         interp->error = 1;
         strncpy(interp->errmsg, msg, 255);
+        /* Make it catchable */
+        if (!g_throwing) {
+            g_throwing = 1;
+            g_throw_val = val_string(msg);
+        }
     }
     return val_null();
 }
@@ -131,6 +139,58 @@ static Value builtin_str(Value *args, int n) {
     return val_string(buf);
 }
 
+
+static Value builtin_push(Value *args, int n) {
+    if (n < 2 || args[0].type != VAL_ARRAY) return val_null();
+    val_array_push(&args[0], args[1]);
+    return args[0];
+}
+/* NOTE: push works via NODE_CALL which passes args by value.
+   For push to persist, we handle it specially in interp_eval CALL case. */
+
+static Value builtin_pop(Value *args, int n) {
+    if (n < 1 || args[0].type != VAL_ARRAY) return val_null();
+    if (args[0].as.arr.len == 0) return val_null();
+    return args[0].as.arr.items[--args[0].as.arr.len];
+}
+
+static Value builtin_len2(Value *args, int n) {
+    if (n < 1) return val_null();
+    if (args[0].type == VAL_STRING) return val_int((long long)strlen(args[0].as.s));
+    if (args[0].type == VAL_ARRAY)  return val_int((long long)args[0].as.arr.len);
+    return val_null();
+}
+
+
+static Value builtin_has(Value *args, int n) {
+    if (n < 2 || args[0].type != VAL_DICT || args[1].type != VAL_STRING)
+        return val_bool(0);
+    Value dummy;
+    return val_bool(val_dict_get(&args[0], args[1].as.s, &dummy));
+}
+
+static Value builtin_del(Value *args, int n) {
+    if (n < 2 || args[0].type != VAL_DICT || args[1].type != VAL_STRING)
+        return val_bool(0);
+    return val_bool(val_dict_del(&args[0], args[1].as.s));
+}
+
+static Value builtin_keys(Value *args, int n) {
+    if (n < 1 || args[0].type != VAL_DICT) return val_null();
+    Value arr = val_array_empty();
+    for (int i = 0; i < args[0].as.dict.dlen; i++)
+        val_array_push(&arr, val_string(args[0].as.dict.dkeys[i]));
+    return arr;
+}
+
+static Value builtin_values(Value *args, int n) {
+    if (n < 1 || args[0].type != VAL_DICT) return val_null();
+    Value arr = val_array_empty();
+    for (int i = 0; i < args[0].as.dict.dlen; i++)
+        val_array_push(&arr, args[0].as.dict.dvals[i]);
+    return arr;
+}
+
 static Value builtin_type(Value *args, int n) {
     if (n < 1) return val_null();
     switch (args[0].type) {
@@ -164,6 +224,13 @@ void interp_init(Interpreter *interp) {
     env_set(interp->globals, "float", val_native(builtin_float));
     env_set(interp->globals, "str",   val_native(builtin_str));
     env_set(interp->globals, "type",  val_native(builtin_type));
+    env_set(interp->globals, "push",  val_native(builtin_push));
+    env_set(interp->globals, "has",   val_native(builtin_has));
+    env_set(interp->globals, "del",   val_native(builtin_del));
+    env_set(interp->globals, "keys",  val_native(builtin_keys));
+    env_set(interp->globals, "values",val_native(builtin_values));
+    env_set(interp->globals, "pop",   val_native(builtin_pop));
+    env_set(interp->globals, "len",   val_native(builtin_len2));
 
     /* import function for VM use */
     /* (tree interpreter handles NODE_IMPORT directly) */
@@ -314,6 +381,218 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             return val_null();
         }
 
+        /* ── dict literal ───────────────────────────────────── */
+        case NODE_DICT: {
+            Value d = val_dict_empty();
+            for (int i = 0; i < node->as.dict.count; i++) {
+                Value v = interp_eval(interp, node->as.dict.values[i], env);
+                if (interp->error) return val_null();
+                val_dict_set(&d, node->as.dict.keys[i], v);
+            }
+            return d;
+        }
+
+        /* ── array literal ──────────────────────────────────── */
+        case NODE_ARRAY: {
+            Value arr = val_array_empty();
+            for (int i = 0; i < node->as.array.count; i++) {
+                Value v = interp_eval(interp, node->as.array.elements[i], env);
+                if (interp->error) return val_null();
+                val_array_push(&arr, v);
+            }
+            return arr;
+        }
+
+        /* ── array/string index: a[i] ────────────────────────────── */
+        case NODE_INDEX: {
+            Value container;
+            if (!env_get(env, node->as.index_expr.name, &container)) {
+                char msg[128];
+                snprintf(msg, 127, "Undefined variable '%s'", node->as.index_expr.name);
+                return runtime_error(interp, msg);
+            }
+            Value idx = interp_eval(interp, node->as.index_expr.index, env);
+            if (interp->error) return val_null();
+            long long i = idx.type == VAL_INT ? idx.as.i : (long long)idx.as.f;
+            if (container.type == VAL_ARRAY) {
+                if (i < 0) i += container.as.arr.len;
+                if (i < 0 || i >= container.as.arr.len)
+                    return runtime_error(interp, "Array index out of bounds");
+                return container.as.arr.items[i];
+            }
+            if (container.type == VAL_DICT) {
+                if (idx.type != VAL_STRING)
+                    return runtime_error(interp, "Dict key must be a string");
+                Value out;
+                if (!val_dict_get(&container, idx.as.s, &out)) {
+                    char msg[128];
+                    snprintf(msg, 127, "Key not found: '%s'", idx.as.s);
+                    return runtime_error(interp, msg);
+                }
+                return out;
+            }
+            if (container.type == VAL_STRING) {
+                int slen = (int)strlen(container.as.s);
+                if (i < 0) i += slen;
+                if (i < 0 || i >= slen)
+                    return runtime_error(interp, "String index out of bounds");
+                char ch[2] = { container.as.s[i], 0 };
+                return val_string(ch);
+            }
+            return runtime_error(interp, "Cannot index non-array/string");
+        }
+
+        /* ── array index assign: a[i] = v ───────────────────────── */
+        case NODE_INDEX_ASSIGN: {
+            Value container;
+            if (!env_get(env, node->as.index_assign.name, &container)) {
+                char msg[128];
+                snprintf(msg, 127, "Undefined variable '%s'", node->as.index_assign.name);
+                return runtime_error(interp, msg);
+            }
+            Value idx = interp_eval(interp, node->as.index_assign.index, env);
+            Value val = interp_eval(interp, node->as.index_assign.value, env);
+            if (interp->error) return val_null();
+            long long i = idx.type == VAL_INT ? idx.as.i : (long long)idx.as.f;
+            if (container.type == VAL_ARRAY) {
+                if (i < 0) i += container.as.arr.len;
+                if (i < 0 || i >= container.as.arr.len)
+                    return runtime_error(interp, "Array index out of bounds");
+                container.as.arr.items[i] = val;
+                env_assign(env, node->as.index_assign.name, container);
+                return val;
+            }
+            if (container.type == VAL_DICT) {
+                if (idx.type != VAL_STRING)
+                    return runtime_error(interp, "Dict key must be a string");
+                val_dict_set(&container, idx.as.s, val);
+                env_assign(env, node->as.index_assign.name, container);
+                return val;
+            }
+            return runtime_error(interp, "Cannot index-assign non-array/dict");
+        }
+
+        /* ── self ───────────────────────────────────────────── */
+        case NODE_SELF: {
+            Value self_val;
+            if (!env_get(env, "__self__", &self_val))
+                return runtime_error(interp, "'self' used outside a method");
+            return self_val;
+        }
+
+        /* ── get attribute: obj.field ─────────────────────────────── */
+        case NODE_GET_ATTR: {
+            Value obj = interp_eval(interp, node->as.get_attr.object, env);
+            if (interp->error) return val_null();
+            if (obj.type == VAL_INSTANCE) {
+                Value out;
+                if (!inst_get(&obj, node->as.get_attr.field, &out)) {
+                    char msg[128];
+                    snprintf(msg, 127, "No attribute '%s'", node->as.get_attr.field);
+                    return runtime_error(interp, msg);
+                }
+                return out;
+            }
+            return runtime_error(interp, "Cannot get attribute of non-instance");
+        }
+
+        /* ── set attribute: obj.field = val ───────────────────────── */
+        case NODE_SET_ATTR: {
+            Value obj = interp_eval(interp, node->as.set_attr.object, env);
+            if (interp->error) return val_null();
+            Value val = interp_eval(interp, node->as.set_attr.value, env);
+            if (interp->error) return val_null();
+            if (obj.type == VAL_INSTANCE) {
+                inst_set(&obj, node->as.set_attr.field, val);
+                /* Write back to env if object came from an ident */
+                if (node->as.set_attr.object->type == NODE_IDENT)
+                    env_assign(env, node->as.set_attr.object->as.ident.name, obj);
+                else if (node->as.set_attr.object->type == NODE_SELF) {
+                    Value self_val;
+                    if (env_get(env, "__self__", &self_val)) {
+                        inst_set(&self_val, node->as.set_attr.field, val);
+                        env_assign(env, "__self__", self_val);
+                        /* Also write back to the original variable */
+                        Value orig_name_val;
+                        if (env_get(env, "__self_name__", &orig_name_val))
+                            env_assign(env, orig_name_val.as.s, self_val);
+                    }
+                }
+                return val;
+            }
+            return runtime_error(interp, "Cannot set attribute of non-instance");
+        }
+
+        /* ── class definition ─────────────────────────────────────── */
+        case NODE_CLASS_DEF: {
+            Value cls;
+            cls.type = VAL_CLASS;
+            strncpy(cls.as.cls.name, node->as.class_def.name, 127);
+            cls.as.cls.mlen  = node->as.class_def.method_count;
+            cls.as.cls.mkeys = (char**)malloc(cls.as.cls.mlen * sizeof(char*));
+            cls.as.cls.mvals = (Value*)malloc(cls.as.cls.mlen * sizeof(Value));
+            for (int i = 0; i < node->as.class_def.method_count; i++) {
+                Node *m = node->as.class_def.methods[i];
+                char *_k = (char*)malloc(strlen(m->as.fn_def.name)+1);
+                strcpy(_k, m->as.fn_def.name);
+                cls.as.cls.mkeys[i] = _k;
+                cls.as.cls.mvals[i] = val_function(m, env);
+            }
+            env_set(env, node->as.class_def.name, cls);
+            return cls;
+        }
+
+        /* ── throw ──────────────────────────────────────────── */
+        case NODE_THROW: {
+            Value v = interp_eval(interp, node->as.throw_stmt.value, env);
+            if (!interp->error) {
+                g_throwing = 1;
+                g_throw_val = v;
+                interp->error = 1;
+                if (v.type == VAL_STRING)
+                    strncpy(interp->errmsg, v.as.s, 255);
+                else
+                    strncpy(interp->errmsg, "thrown error", 255);
+            }
+            return val_null();
+        }
+
+        /* ── try / catch ─────────────────────────────────────────── */
+        case NODE_TRY: {
+            /* Save state */
+            int   saved_error     = interp->error;
+            int   saved_throwing  = g_throwing;
+            char  saved_msg[256];
+            strncpy(saved_msg, interp->errmsg, 255);
+
+            /* Reset error state for the try block */
+            interp->error     = 0;
+            interp->errmsg[0] = 0;
+            g_throwing        = 0;
+
+            /* Execute try block */
+            interp_eval(interp, node->as.try_stmt.try_block, env);
+
+            if (interp->error || g_throwing) {
+                /* An error was thrown — run the catch block */
+                Value err_val = g_throw_val;
+                if (err_val.type == VAL_NULL)
+                    err_val = val_string(interp->errmsg);
+
+                /* Reset error so catch block runs clean */
+                interp->error = 0;
+                interp->errmsg[0] = 0;
+                g_throwing = 0;
+
+                /* Bind error variable in a child scope */
+                Env *catch_env = env_new(env);
+                env_set(catch_env, node->as.try_stmt.err_name, err_val);
+                interp_eval(interp, node->as.try_stmt.catch_block, catch_env);
+                env_free(catch_env);
+            }
+            return val_null();
+        }
+
         /* ── import statement ────────────────────────────────── */
         case NODE_IMPORT: {
             if (!stdlib_import(env, node->as.import_stmt.module)) {
@@ -407,6 +686,83 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
 
         /* ── Function call ────────────────────────────────────── */
         case NODE_CALL: {
+            /* ── obj.method(args) call ── */
+            if (strchr(node->as.call.name, '.') != NULL) {
+                /* Split "obj.method" or "__self__.method" */
+                char obj_name[MAX_NAME], method_name[MAX_NAME];
+                const char *dot = strchr(node->as.call.name, '.');
+                int obj_len = (int)(dot - node->as.call.name);
+                strncpy(obj_name, node->as.call.name, obj_len);
+                obj_name[obj_len] = 0;
+                strncpy(method_name, dot+1, MAX_NAME-1);
+
+                Value obj;
+                if (strcmp(obj_name, "__self__") == 0) {
+                    if (!env_get(env, "__self__", &obj))
+                        return runtime_error(interp, "self not available");
+                } else {
+                    if (!env_get(env, obj_name, &obj)) {
+                        char msg[128]; snprintf(msg,127,"Undefined: '%s'",obj_name);
+                        return runtime_error(interp, msg);
+                    }
+                }
+
+                if (obj.type != VAL_INSTANCE) {
+                    char msg[128];
+                    snprintf(msg, 127, "'%s' is not an instance", obj_name);
+                    return runtime_error(interp, msg);
+                }
+
+                /* Find method in instance (copied from class at init) */
+                Value method;
+                if (!inst_get(&obj, method_name, &method)) {
+                    char msg[128];
+                    snprintf(msg, 127, "No method '%s'", method_name);
+                    return runtime_error(interp, msg);
+                }
+
+                if (method.type != VAL_FUNCTION)
+                    return runtime_error(interp, "Attribute is not a method");
+
+                Node *def = method.as.fn.def;
+                Env *call_env = env_new(method.as.fn.closure);
+
+                /* Bind params */
+                int expected = def->as.fn_def.param_count;
+                int got = node->as.call.arg_count;
+                if (expected != got) {
+                    char msg[128];
+                    snprintf(msg,127,"Method expects %d args got %d",expected,got);
+                    return runtime_error(interp, msg);
+                }
+                for (int i=0; i<expected; i++) {
+                    Value a = interp_eval(interp, node->as.call.args[i], env);
+                    if (interp->error) { env_free(call_env); return val_null(); }
+                    env_set(call_env, def->as.fn_def.params[i], a);
+                }
+
+                /* Bind self */
+                env_set(call_env, "__self__", obj);
+                env_set(call_env, "__self_name__",
+                    strcmp(obj_name,"__self__")==0 ? val_string("__self__") : val_string(obj_name));
+
+                /* Run body */
+                interp_eval(interp, def->as.fn_def.body, call_env);
+
+                /* Get updated self and write back */
+                Value updated_self;
+                if (env_get(call_env, "__self__", &updated_self)) {
+                    if (strcmp(obj_name, "__self__") == 0)
+                        env_assign(env, "__self__", updated_self);
+                    else
+                        env_assign(env, obj_name, updated_self);
+                }
+
+                env_free(call_env);
+                Value ret = val_null();
+                if (g_returning) { ret = g_return_val; g_returning = 0; }
+                return ret;
+            }
             /* Evaluate all arguments first */
             Value args[MAX_ARGS];
             for (int i = 0; i < node->as.call.arg_count; i++) {
@@ -421,6 +777,79 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
                 snprintf(msg, 128, "Undefined function '%s' on line %d",
                          node->as.call.name, node->line);
                 return runtime_error(interp, msg);
+            }
+
+            /* Class instantiation: ClassName(args) */
+            if (fn.type == VAL_CLASS) {
+                Value instance = val_new_instance(fn.as.cls.name);
+                /* Copy all methods into instance */
+                for (int i=0; i<fn.as.cls.mlen; i++)
+                    inst_set(&instance, fn.as.cls.mkeys[i], fn.as.cls.mvals[i]);
+
+                /* Call init if exists */
+                Value init_fn;
+                if (inst_get(&instance, "init", &init_fn) &&
+                    init_fn.type == VAL_FUNCTION) {
+                    Node *def = init_fn.as.fn.def;
+                    Env *call_env = env_new(init_fn.as.fn.closure);
+                    int expected = def->as.fn_def.param_count;
+                    int got = node->as.call.arg_count;
+                    if (expected != got) {
+                        char msg[128];
+                        snprintf(msg,127,"init expects %d args got %d",expected,got);
+                        return runtime_error(interp, msg);
+                    }
+                    for (int i=0; i<expected; i++) {
+                        Value a = interp_eval(interp, node->as.call.args[i], env);
+                        if (interp->error) { env_free(call_env); return val_null(); }
+                        env_set(call_env, def->as.fn_def.params[i], a);
+                    }
+                    env_set(call_env, "__self__", instance);
+                    env_set(call_env, "__self_name__", val_string("__self__"));
+                    interp_eval(interp, def->as.fn_def.body, call_env);
+                    Value updated;
+                    if (env_get(call_env, "__self__", &updated))
+                        instance = updated;
+                    env_free(call_env);
+                    if (g_returning) g_returning = 0;
+                }
+                return instance;
+            }
+
+            /* Special: push/pop mutate arrays in-place via env */
+            if (fn.type == VAL_NATIVE &&
+                (strcmp(node->as.call.name, "push") == 0 ||
+                 strcmp(node->as.call.name, "pop")  == 0 ||
+                 strcmp(node->as.call.name, "del")  == 0)) {
+                if (node->as.call.arg_count >= 1 &&
+                    node->as.call.args[0]->type == NODE_IDENT) {
+                    const char *vname = node->as.call.args[0]->as.ident.name;
+                    Value arr;
+                    if (!env_get(env, vname, &arr)) {
+                        return runtime_error(interp, "Undefined variable in push/pop");
+                    }
+                    Value result = val_null();
+                    /* del mutates dict */
+                    if (strcmp(node->as.call.name, "del") == 0 &&
+                        node->as.call.arg_count >= 2) {
+                        Value key = interp_eval(interp, node->as.call.args[1], env);
+                        val_dict_del(&arr, key.as.s);
+                        env_assign(env, vname, arr);
+                        return val_bool(1);
+                    }
+                    if (strcmp(node->as.call.name, "push") == 0 &&
+                        node->as.call.arg_count >= 2) {
+                        Value item = interp_eval(interp, node->as.call.args[1], env);
+                        if (interp->error) return val_null();
+                        val_array_push(&arr, item);
+                        result = arr;
+                    } else if (strcmp(node->as.call.name, "pop") == 0) {
+                        if (arr.as.arr.len > 0)
+                            result = arr.as.arr.items[--arr.as.arr.len];
+                    }
+                    env_assign(env, vname, arr);
+                    return result;
+                }
             }
 
             /* Native (built-in) function */

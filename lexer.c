@@ -98,6 +98,11 @@ static Keyword KEYWORDS[] = {
     { "not",    TOK_NOT    },
     { "print",  TOK_PRINT  },
     { "import", TOK_IMPORT },
+    { "try",    TOK_TRY    },
+    { "catch",  TOK_CATCH  },
+    { "throw",  TOK_THROW  },
+    { "class",  TOK_CLASS  },
+    { "self",   TOK_SELF   },
     { NULL,     TOK_ERROR  },   /* sentinel — marks end of table */
 };
 
