@@ -1,0 +1,98 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          gcc -Wall -std=c99 -O2 \
+            lexer.c parser.c interp.c compiler.c vm_impl.c main.c \
+            -o lang-linux -lm
+          strip lang-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lang-linux
+          path: lang-linux
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          gcc -Wall -std=c99 -O2 \
+            lexer.c parser.c interp.c compiler.c vm_impl.c main.c \
+            -o lang-mac -lm
+          strip lang-mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lang-mac
+          path: lang-mac
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          gcc -Wall -std=c99 -O2 `
+            lexer.c parser.c interp.c compiler.c vm_impl.c main.c `
+            -o lang-windows.exe -lm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lang-windows
+          path: lang-windows.exe
+
+  release:
+    needs: [build-linux, build-mac, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            lang-linux/lang-linux
+            lang-mac/lang-mac
+            lang-windows/lang-windows.exe
+          body: |
+            ## Download
+
+            | Platform | File |
+            |----------|------|
+            | Linux    | lang-linux |
+            | macOS    | lang-mac |
+            | Windows  | lang-windows.exe |
+
+            ## Install
+
+            **Linux:**
+```bash
+            chmod +x lang-linux
+            sudo cp lang-linux /usr/local/bin/lang
+            lang
+```
+
+            **macOS:**
+```bash
+            chmod +x lang-mac
+            sudo cp lang-mac /usr/local/bin/lang
+            lang
+```
+
+            **Windows:**
+```
+            Rename lang-windows.exe to lang.exe
+            Add to PATH or run directly
+            lang.exe myfile.lang
+```
