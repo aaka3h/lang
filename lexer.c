@@ -256,11 +256,18 @@ Token lexer_next_token(Lexer *l) {
     advance(l);  /* consume the character before making the token */
 
     switch (c) {
-        case '+': return make_token(l, TOK_PLUS,      "+");
-        case '-': return make_token(l, TOK_MINUS,     "-");
-        case '*': return make_token(l, TOK_STAR,      "*");
+        case '+':
+            if (l->src[l->pos] == '=') { l->pos++; return make_token(l, TOK_PLUS_EQ, "+="); }
+            return make_token(l, TOK_PLUS, "+");
+        case '-':
+            if (l->src[l->pos] == '=') { l->pos++; return make_token(l, TOK_MINUS_EQ, "-="); }
+            return make_token(l, TOK_MINUS, "-");
+        case '*':
+            if (l->src[l->pos] == '=') { l->pos++; return make_token(l, TOK_STAR_EQ, "*="); }
+            return make_token(l, TOK_STAR, "*");
         case '/':
             if (l->src[l->pos] == '/') { l->pos++; return make_token(l, TOK_IDIV, "//"); }
+            if (l->src[l->pos] == '=') { l->pos++; return make_token(l, TOK_SLASH_EQ, "/="); }
             return make_token(l, TOK_SLASH, "/");
         case '%': return make_token(l, TOK_PERCENT,   "%");
         case '(': return make_token(l, TOK_LPAREN,    "(");

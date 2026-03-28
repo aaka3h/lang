@@ -320,7 +320,14 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
         /* ── Literals ─────────────────────────────────────────── */
         case NODE_INT:    return val_int(node->as.int_lit.value);
         case NODE_FLOAT:  return val_float(node->as.float_lit.value);
-        case NODE_STRING: return val_string(node->as.str_lit.value);
+        case NODE_STRING: {
+            const char *s = node->as.str_lit.value;
+            /* Only interpolate if string contains { */
+            if (strchr(s, '{')) {
+                return val_string(std_interpolate(s, env));
+            }
+            return val_string(s);
+        }
         case NODE_BOOL:   return val_bool(node->as.bool_lit.value);
         case NODE_NULL:   return val_null();
 
@@ -710,7 +717,7 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             Value last = val_null();
             for (int i = 0; i < node->as.block.count; i++) {
                 last = interp_eval(interp, node->as.block.stmts[i], env);
-                if (interp->error || g_returning || g_breaking || g_continuing) break;
+                if (interp->error || g_returning) break;
             }
             return last;
         }
@@ -735,14 +742,12 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
 
         /* ── while loop ───────────────────────────────────────── */
         case NODE_WHILE: {
-            while (!interp->error && !g_returning && !g_breaking) {
+            while (!interp->error && !g_returning) {
                 Value cond = interp_eval(interp, node->as.while_stmt.cond, env);
                 if (interp->error || !val_truthy(cond)) break;
                 Env *child = env_new(env);
                 interp_eval(interp, node->as.while_stmt.body, child);
                 env_free(child);
-                if (g_breaking) { g_breaking = 0; break; }
-                if (g_continuing) { g_continuing = 0; }
             }
             return val_null();
         }
@@ -751,17 +756,13 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
         case NODE_FOR: {
             Env *loop_env = env_new(env);
             interp_eval(interp, node->as.for_stmt.init, loop_env);
-            while (!interp->error && !g_returning && !g_breaking) {
+            while (!interp->error && !g_returning) {
                 Value cond = interp_eval(interp, node->as.for_stmt.cond, loop_env);
                 if (interp->error || !val_truthy(cond)) break;
                 Env *body_env = env_new(loop_env);
                 interp_eval(interp, node->as.for_stmt.body, body_env);
                 env_free(body_env);
-                if (g_breaking) { g_breaking = 0; break; }
-                if (g_continuing) { g_continuing = 0;
-                    interp_eval(interp, node->as.for_stmt.step, loop_env);
-                    continue; }
-                if (interp->error || g_returning || g_breaking || g_continuing) break;
+                if (interp->error || g_returning) break;
                 interp_eval(interp, node->as.for_stmt.step, loop_env);
             }
             env_free(loop_env);
@@ -1021,6 +1022,20 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
 /* ─────────────────────────────────────────────────────────────────
    interp_run — convenience: parse + run a source string
    ───────────────────────────────────────────────────────────────── */
+/* Run source code in a given environment (for user module imports) */
+int interp_run_source(Env *env, const char *src) {
+    Node *tree = parse_source(src);
+    if (!tree) return 0;
+    Interpreter tmp_interp;
+    tmp_interp.globals = env;
+    tmp_interp.error   = 0;
+    tmp_interp.errmsg[0] = '\0';
+    interp_eval(&tmp_interp, tree, env);
+    int ok = !tmp_interp.error;
+    ast_free(tree);
+    return ok;
+}
+
 void interp_run(Interpreter *interp, const char *src) {
     Node *tree = parse_source(src);
     if (!tree) { fprintf(stderr, "Parse failed\n"); return; }

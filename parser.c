@@ -467,6 +467,33 @@ static Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    /* compound assignment: x += expr, x -= expr, x *= expr, x /= expr */
+    if (check(p, TOK_IDENT) && (
+            peek_next(p).type == TOK_PLUS_EQ ||
+            peek_next(p).type == TOK_MINUS_EQ ||
+            peek_next(p).type == TOK_STAR_EQ ||
+            peek_next(p).type == TOK_SLASH_EQ)) {
+        Token name = advance(p);  /* consume IDENT */
+        Token op   = advance(p);  /* consume +=/-=/etc */
+        Node *rhs  = parse_expr(p);
+        if (p->error) return NULL;
+        /* desugar: name OP= rhs  ->  name = name OP rhs */
+        Node *lhs_ident = node_alloc(NODE_IDENT, name.line, name.col);
+        strncpy(lhs_ident->as.ident.name, name.value, MAX_NAME-1);
+        const char *opstr = "+";
+        if (op.type == TOK_MINUS_EQ) opstr = "-";
+        else if (op.type == TOK_STAR_EQ)  opstr = "*";
+        else if (op.type == TOK_SLASH_EQ) opstr = "/";
+        Node *binop = node_alloc(NODE_BINOP, op.line, op.col);
+        binop->as.binop.left  = lhs_ident;
+        binop->as.binop.right = rhs;
+        strncpy(binop->as.binop.op, opstr, 7);
+        Node *n = node_alloc(NODE_ASSIGN, name.line, name.col);
+        strncpy(n->as.assign.name, name.value, MAX_NAME-1);
+        n->as.assign.value = binop;
+        return n;
+    }
+
     /* expression statement (e.g. a function call on its own line) */
     return parse_expr(p);
 }

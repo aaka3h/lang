@@ -355,12 +355,66 @@ static void stdlib_load_sys(Env *env) {
    Call this when the interpreter/VM hits an `import "module"` stmt.
    Returns 1 on success, 0 if module not found.
    ───────────────────────────────────────────────────────────────── */
+
+/* Load a user .lang file as a module */
+static int stdlib_import_file(Env *env, const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f); rewind(f);
+    char *src_buf = (char*)malloc(sz + 1);
+    if (!src_buf) { fclose(f); return 0; }
+    if (fread(src_buf, 1, sz, f) != (size_t)sz) { free(src_buf); fclose(f); return 0; }
+    src_buf[sz] = '\0'; fclose(f);
+    /* lex + parse + interpret in current env */
+    extern int interp_run_source(Env *env, const char *src);
+    int ok = interp_run_source(env, src_buf);
+    free(src_buf);
+    return ok;
+}
+
+
+/* String interpolation helper — used by the interpreter for "...{var}..." */
+static char *std_interpolate(const char *s, Env *env) {
+    static char result[512];
+    int ri = 0;
+    while (*s && ri < 510) {
+        if (*s == '{' && *(s+1) != '{') {
+            s++; /* skip { */
+            char vname[128]; int vi = 0;
+            while (*s && *s != '}' && vi < 127) vname[vi++] = *s++;
+            vname[vi] = '\0';
+            if (*s == '}') s++;
+            Value v; 
+            if (env_get(env, vname, &v)) {
+                char tmp[128]; tmp[0] = '\0';
+                if (v.type == VAL_STRING) snprintf(tmp, 127, "%s", v.as.s);
+                else if (v.type == VAL_INT) snprintf(tmp, 127, "%lld", v.as.i);
+                else if (v.type == VAL_FLOAT) snprintf(tmp, 127, "%g", v.as.f);
+                else if (v.type == VAL_BOOL) snprintf(tmp, 127, "%s", v.as.b?"true":"false");
+                int tl = strlen(tmp);
+                for (int i=0;i<tl&&ri<510;i++) result[ri++]=tmp[i];
+            }
+        } else {
+            result[ri++] = *s++;
+        }
+    }
+    result[ri] = '\0';
+    return result;
+}
+
 static int stdlib_import(Env *env, const char *module) {
     if (strcmp(module, "math")   == 0) { stdlib_load_math(env);   return 1; }
     if (strcmp(module, "string") == 0) { stdlib_load_string(env); return 1; }
     if (strcmp(module, "io")     == 0) { stdlib_load_io(env);     return 1; }
     if (strcmp(module, "sys")    == 0) { stdlib_load_sys(env);    return 1; }
     if (strcmp(module, "lint")   == 0) { stdlib_load_lint(env);   return 1; }
+    /* Try as a .lang file */
+    if (stdlib_import_file(env, module)) return 1;
+    /* Try appending .lang */
+    char path[300];
+    snprintf(path, 299, "%s.lang", module);
+    if (stdlib_import_file(env, path)) return 1;
     return 0;
 }
 

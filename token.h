@@ -52,6 +52,10 @@ typedef enum {
     TOK_STAR,       /* *                                */
     TOK_SLASH,      /* /                                */
     TOK_IDIV,       /* // (integer division)            */
+    TOK_PLUS_EQ,    /* +=                               */
+    TOK_MINUS_EQ,   /* -=                               */
+    TOK_STAR_EQ,    /* *=                               */
+    TOK_SLASH_EQ,   /* /=                               */
     TOK_PERCENT,    /* %                                */
 
     /* ── Comparison operators ──────────────────────── */
