@@ -118,6 +118,9 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     import "io"      # readfile writefile input
     import "sys"     # clock exit
     import "lint"    # built-in static code analyzer
+    import "json"    # json_encode json_decode
+    import "random"  # random randint shuffle choice
+    import "http"    # http_get time_now
 
 ## Architecture
 
