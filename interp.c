@@ -34,6 +34,7 @@ static Value  g_return_val;
 
 static int    g_throwing  = 0;   /* 1 when a throw/error is in flight */
 static Value  g_throw_val;       /* the thrown value                  */
+static int    g_current_line = 0; /* tracks current executing line */
 static int    g_breaking   = 0;   /* 1 when break is in flight         */
 static int    g_continuing = 0;   /* 1 when continue is in flight      */
 
@@ -41,6 +42,7 @@ static int    g_continuing = 0;   /* 1 when continue is in flight      */
 static Value runtime_error(Interpreter *interp, const char *msg) {
     if (!interp->error) {
         interp->error = 1;
+        interp->error_line = g_current_line;
         strncpy(interp->errmsg, msg, 255);
         /* Make it catchable */
         if (!g_throwing) {
@@ -314,6 +316,7 @@ static Value eval_binop(Interpreter *interp, const char *op, Value L, Value R) {
    ───────────────────────────────────────────────────────────────── */
 Value interp_eval(Interpreter *interp, Node *node, Env *env) {
     if (!node || interp->error) return val_null();
+    if (node->line > 0) g_current_line = node->line;
 
     switch (node->type) {
 

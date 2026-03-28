@@ -122,9 +122,8 @@ static int run_tree(const char *src) {
     interp_eval(&g_interp, tree, g_interp.globals);
 
     if (g_interp.error) {
-        int line = 0;
-        sscanf(g_interp.errmsg, "%*[^0-9]%d", &line);
-        err_report(src, ERR_RUNTIME, line > 0 ? line : 1, 1, g_interp.errmsg);
+        int line = g_interp.error_line > 0 ? g_interp.error_line : 1;
+        err_report(src, ERR_RUNTIME, line, 1, g_interp.errmsg);
         return 1;
     }
     return 0;

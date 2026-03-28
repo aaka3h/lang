@@ -20,6 +20,7 @@
 typedef struct {
     Env  *globals;    /* top-level scope                    */
     int   error;      /* 1 if a runtime error occurred      */
+    int   error_line; /* line number where error occurred    */
     char  errmsg[256];
 } Interpreter;
 
