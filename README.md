@@ -45,7 +45,7 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     print nums[0]
 
     # Dictionaries
-    let person = {"name": "Aakash", "age": 21}
+    let person = {"name": "Lang", "version": 1}
     print person["name"]
 
     # Classes
