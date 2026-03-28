@@ -30,6 +30,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "value.h"
+#include "lint_module.h"
 
 /* ─────────────────────────────────────────────────────────────────
    MATH MODULE
@@ -282,6 +283,7 @@ static int stdlib_import(Env *env, const char *module) {
     if (strcmp(module, "string") == 0) { stdlib_load_string(env); return 1; }
     if (strcmp(module, "io")     == 0) { stdlib_load_io(env);     return 1; }
     if (strcmp(module, "sys")    == 0) { stdlib_load_sys(env);    return 1; }
+    if (strcmp(module, "lint")   == 0) { stdlib_load_lint(env);   return 1; }
     return 0;
 }
 
