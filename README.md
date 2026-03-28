@@ -7,12 +7,19 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
 ## Features
 
 - Lexer, recursive descent parser, AST
-- Bytecode compiler + stack VM (like CPython)
+- Bytecode compiler + stack VM
 - Tree-walking interpreter
-- Arrays, dictionaries, classes, inheritance
-- try / catch / throw error handling
-- Standard library: math, string, io, sys
-- Pretty error messages with line/column highlighting
+- Variables, strings, booleans, null
+- Arrays with negative indexing
+- Dictionaries
+- Classes, inheritance, super()
+- try / catch / throw
+- break and continue
+- Integer division //
+- String format(), split(), join()
+- Built-in static analyzer (lint module)
+- Standard library: math, string, io, sys, lint
+- Pretty error messages
 - Interactive REPL
 
 ## Build
@@ -22,78 +29,51 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
 
 ## Usage
 
-    lang                      # interactive REPL
-    lang file.lang            # run a program
-    lang --tree file.lang     # run with tree interpreter
-    lang --disasm file.lang   # show bytecode
-    lang --test               # run test suite
+    lang                   # REPL
+    lang file.lang         # run a file
+    lang --disasm file.lang  # show bytecode
+    lang --vm file.lang    # run with bytecode VM
 
-## Syntax
+## Example
 
-    # Variables
-    let x = 42
-    let name = "Lang"
-
-    # Functions
-    fn add(a, b) {
-        return a + b
+    fn fibonacci(n) {
+        if n <= 1 { return n }
+        return fibonacci(n - 1) + fibonacci(n - 2)
     }
 
-    # Arrays
-    let nums = [1, 2, 3]
-    push(nums, 4)
-    print nums[0]
+    let i = 0
+    while i < 10 {
+        print fibonacci(i)
+        i = i + 1
+    }
 
-    # Dictionaries
-    let person = {"name": "Lang", "version": 1}
-    print person["name"]
+## Classes
 
-    # Classes
     class Animal {
-        fn init(name) {
-            self.name = name
-        }
-        fn speak() {
-            print self.name + " speaks!"
-        }
+        fn init(name) { self.name = name }
+        fn speak() { print self.name + " speaks" }
     }
-    let dog = Animal("Rex")
-    dog.speak()
 
-    # Inheritance
     class Dog extends Animal {
-        fn init(name) {
-            super(name)
-        }
-        fn speak() {
-            print self.name + " barks"
-        }
+        fn init(name) { super(name) }
+        fn speak() { print self.name + " barks" }
     }
+
     let d = Dog("Rex")
     d.speak()
 
-    # try/catch
-    try {
-        throw "something went wrong"
-    } catch (err) {
-        print "caught: " + err
-    }
-
-    # Loops
-    for let i = 0; i < 10; i = i + 1 {
-        print i
-    }
-
 ## Modules
 
-    import "math"    # sin cos tan log sqrt pi e
-    import "string"  # upper lower trim replace contains
+    import "math"    # sin cos tan sqrt pi e
+    import "string"  # upper lower trim replace split join format
     import "io"      # readfile writefile input
     import "sys"     # clock exit
     import "lint"    # static code analyzer
 
 ## Architecture
 
-    Source → Lexer → Tokens → Parser → AST → Compiler → Bytecode → VM → Output
+    Source → Lexer → Tokens → Parser → AST → Interpreter → Output
+                                          ↓
+                                       Compiler → Bytecode → VM → Output
 
 Built from scratch. No libraries. Every phase hand-written in C.
