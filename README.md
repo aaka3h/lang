@@ -77,3 +77,29 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
                                        Compiler → Bytecode → VM → Output
 
 Built from scratch. No libraries. Every phase hand-written in C.
+
+## New in latest version
+
+    # Compound assignment
+    let x = 10
+    x += 5
+    x -= 2
+    x *= 3
+    x /= 4
+
+    # String interpolation
+    let name = "Lang"
+    print "Hello {name}!"
+
+    # Multi-line strings
+    let text = """line one
+    line two
+    line three"""
+
+    # User modules
+    import "myutils.lang"
+
+    # else if
+    if x == 1 { print "one" }
+    else if x == 2 { print "two" }
+    else { print "other" }
