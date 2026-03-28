@@ -90,6 +90,7 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     import "string"  # upper lower trim replace contains
     import "io"      # readfile writefile input
     import "sys"     # clock exit
+    import "lint"    # static code analyzer
 
 ## Architecture
 
