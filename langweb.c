@@ -148,6 +148,67 @@ static void call_handler(Value handler, Request *req) {
     }
 }
 
+
+/* ── Static file serving ── */
+static char g_static_path[256] = "";
+static char g_static_url[256]  = "";
+
+static Value web_static(Value *a, int n) {
+    if (n < 2 || a[0].type != VAL_STRING || a[1].type != VAL_STRING) return val_null();
+    strncpy(g_static_url,  a[0].as.s, 255);
+    strncpy(g_static_path, a[1].as.s, 255);
+    return val_null();
+}
+
+static const char *mime_type(const char *path) {
+    const char *ext = strrchr(path, '.');
+    if (!ext) return "application/octet-stream";
+    if (strcmp(ext, ".html") == 0) return "text/html";
+    if (strcmp(ext, ".css")  == 0) return "text/css";
+    if (strcmp(ext, ".js")   == 0) return "application/javascript";
+    if (strcmp(ext, ".json") == 0) return "application/json";
+    if (strcmp(ext, ".png")  == 0) return "image/png";
+    if (strcmp(ext, ".jpg")  == 0) return "image/jpeg";
+    if (strcmp(ext, ".svg")  == 0) return "image/svg+xml";
+    if (strcmp(ext, ".ico")  == 0) return "image/x-icon";
+    return "application/octet-stream";
+}
+
+static int try_serve_static(int sock, const char *url_path) {
+    if (!g_static_url[0] || !g_static_path[0]) return 0;
+    if (strncmp(url_path, g_static_url, strlen(g_static_url)) != 0) return 0;
+
+    /* Build file path */
+    char filepath[512];
+    const char *rel = url_path + strlen(g_static_url);
+    snprintf(filepath, 511, "%s/%s", g_static_path, rel);
+
+    /* Security: no path traversal */
+    if (strstr(filepath, "..")) return 0;
+
+    FILE *f = fopen(filepath, "rb");
+    if (!f) return 0;
+
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f); rewind(f);
+    char *buf = malloc(sz);
+    if (!buf) { fclose(f); return 0; }
+    if (fread(buf, 1, sz, f) != (size_t)sz) { free(buf); fclose(f); return 0; }
+    fclose(f);
+
+    char header[256];
+    snprintf(header, 255,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: %s\r\n"
+        "Content-Length: %ld\r\n"
+        "Connection: close\r\n\r\n",
+        mime_type(filepath), sz);
+    send(sock, header, strlen(header), 0);
+    send(sock, buf, sz, 0);
+    free(buf);
+    return 1;
+}
+
 static Value web_serve(Value *a, int n) {
     int port = 8080;
     if (n >= 1 && a[0].type == VAL_INT) port = (int)a[0].as.i;
@@ -190,6 +251,9 @@ static Value web_serve(Value *a, int n) {
         printf("%s %s\n", req.method, req.path);
         fflush(stdout);
 
+        /* Try static files first */
+        if (try_serve_static(client, req.path)) { close(client); continue; }
+
         /* Find matching route */
         int found = 0;
         for (int i = 0; i < g_route_count; i++) {
@@ -215,4 +279,5 @@ void stdlib_load_web(Env *env) {
     env_set(env, "html",          val_native(web_html));
     env_set(env, "json_response", val_native(web_json_response));
     env_set(env, "redirect",      val_native(web_redirect));
+    env_set(env, "route_static",   val_native(web_static));
 }

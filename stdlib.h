@@ -407,6 +407,7 @@ static void stdlib_load_json(Env *env);
 static void stdlib_load_random(Env *env);
 static void stdlib_load_http(Env *env);
 void stdlib_load_web(Env *env);
+void stdlib_load_db(Env *env);
 
 static int stdlib_import(Env *env, const char *module) {
     if (strcmp(module, "math")   == 0) { stdlib_load_math(env);   return 1; }
@@ -418,6 +419,7 @@ static int stdlib_import(Env *env, const char *module) {
     if (strcmp(module, "random") == 0) { stdlib_load_random(env); return 1; }
     if (strcmp(module, "http")   == 0) { stdlib_load_http(env);   return 1; }
     if (strcmp(module, "web")    == 0) { stdlib_load_web(env);    return 1; }
+    if (strcmp(module, "db")     == 0) { stdlib_load_db(env);     return 1; }
     /* Try as a .lang file */
     if (stdlib_import_file(env, module)) return 1;
     /* Try appending .lang */

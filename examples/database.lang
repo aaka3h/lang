@@ -1,0 +1,21 @@
+import "db"
+import "json"
+
+let d = db_open("myapp.db")
+
+db_exec(d, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, body TEXT)")
+db_exec(d, "INSERT INTO notes (title, body) VALUES ('Hello', 'First note!')")
+db_exec(d, "INSERT INTO notes (title, body) VALUES ('Lang', 'Built in C')")
+db_exec(d, "INSERT INTO notes (title, body) VALUES ('NTU', 'Starting soon!')")
+
+let notes = db_query(d, "SELECT * FROM notes")
+print "All notes:"
+let i = 0
+while i < len(notes) {
+    let note = notes[i]
+    print str(note["id"]) + ". " + note["title"] + " - " + note["body"]
+    i += 1
+}
+
+db_close(d)
+print "Done!"
