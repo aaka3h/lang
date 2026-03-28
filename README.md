@@ -9,7 +9,7 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
 - Lexer, recursive descent parser, AST
 - Bytecode compiler + stack VM (like CPython)
 - Tree-walking interpreter
-- Arrays, dictionaries, classes
+- Arrays, dictionaries, classes, inheritance
 - try / catch / throw error handling
 - Standard library: math, string, io, sys
 - Pretty error messages with line/column highlighting
@@ -59,6 +59,18 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     }
     let dog = Animal("Rex")
     dog.speak()
+
+    # Inheritance
+    class Dog extends Animal {
+        fn init(name) {
+            super(name)
+        }
+        fn speak() {
+            print self.name + " barks"
+        }
+    }
+    let d = Dog("Rex")
+    d.speak()
 
     # try/catch
     try {
