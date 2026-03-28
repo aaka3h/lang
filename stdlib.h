@@ -403,12 +403,19 @@ static char *std_interpolate(const char *s, Env *env) {
     return result;
 }
 
+static void stdlib_load_json(Env *env);
+static void stdlib_load_random(Env *env);
+static void stdlib_load_http(Env *env);
+
 static int stdlib_import(Env *env, const char *module) {
     if (strcmp(module, "math")   == 0) { stdlib_load_math(env);   return 1; }
     if (strcmp(module, "string") == 0) { stdlib_load_string(env); return 1; }
     if (strcmp(module, "io")     == 0) { stdlib_load_io(env);     return 1; }
     if (strcmp(module, "sys")    == 0) { stdlib_load_sys(env);    return 1; }
     if (strcmp(module, "lint")   == 0) { stdlib_load_lint(env);   return 1; }
+    if (strcmp(module, "json")   == 0) { stdlib_load_json(env);   return 1; }
+    if (strcmp(module, "random") == 0) { stdlib_load_random(env); return 1; }
+    if (strcmp(module, "http")   == 0) { stdlib_load_http(env);   return 1; }
     /* Try as a .lang file */
     if (stdlib_import_file(env, module)) return 1;
     /* Try appending .lang */
@@ -419,3 +426,193 @@ static int stdlib_import(Env *env, const char *module) {
 }
 
 #endif /* STDLIB_H */
+
+/* ═══════════════════════════════════════════════════════════════
+   JSON MODULE
+   ═══════════════════════════════════════════════════════════════ */
+
+static void json_encode_value(Value v, char *out, int max, int *pos) {
+    char tmp[256];
+    if (*pos >= max - 2) return;
+    if (v.type == VAL_NULL) {
+        int l = snprintf(tmp, 255, "null"); if (*pos+l<max) { memcpy(out+*pos,tmp,l); *pos+=l; }
+    } else if (v.type == VAL_BOOL) {
+        int l = snprintf(tmp, 255, "%s", v.as.b?"true":"false"); if (*pos+l<max) { memcpy(out+*pos,tmp,l); *pos+=l; }
+    } else if (v.type == VAL_INT) {
+        int l = snprintf(tmp, 255, "%lld", v.as.i); if (*pos+l<max) { memcpy(out+*pos,tmp,l); *pos+=l; }
+    } else if (v.type == VAL_FLOAT) {
+        int l = snprintf(tmp, 255, "%g", v.as.f); if (*pos+l<max) { memcpy(out+*pos,tmp,l); *pos+=l; }
+    } else if (v.type == VAL_STRING) {
+        out[(*pos)++] = '"';
+        for (const char *p = v.as.s; *p && *pos < max-2; p++) {
+            if (*p == '"' || *p == '\\') out[(*pos)++] = '\\';
+            out[(*pos)++] = *p;
+        }
+        out[(*pos)++] = '"';
+    } else if (v.type == VAL_ARRAY) {
+        out[(*pos)++] = '[';
+        for (int i = 0; i < v.as.arr.len && *pos < max-2; i++) {
+            if (i > 0) out[(*pos)++] = ',';
+            json_encode_value(v.as.arr.items[i], out, max, pos);
+        }
+        out[(*pos)++] = ']';
+    } else if (v.type == VAL_DICT) {
+        out[(*pos)++] = '{';
+        int first = 1;
+        for (int i = 0; i < v.as.dict.dlen && *pos < max-4; i++) {
+            if (!first) out[(*pos)++] = ',';
+            first = 0;
+            out[(*pos)++] = '"';
+            const char *k = v.as.dict.dkeys[i];
+            while (*k && *pos < max-2) out[(*pos)++] = *k++;
+            out[(*pos)++] = '"';
+            out[(*pos)++] = ':';
+            json_encode_value(v.as.dict.dvals[i], out, max, pos);
+        }
+        out[(*pos)++] = '}';
+    } else {
+        int l = snprintf(tmp, 255, "null"); if (*pos+l<max) { memcpy(out+*pos,tmp,l); *pos+=l; }
+    }
+}
+
+static Value std_json_encode(Value *a, int n) {
+    if (n < 1) return val_string("null");
+    char buf[4096]; int pos = 0;
+    json_encode_value(a[0], buf, sizeof(buf)-1, &pos);
+    buf[pos] = '\0';
+    return val_string(buf);
+}
+
+/* Simple JSON decoder — handles flat objects and arrays */
+static Value std_json_decode(Value *a, int n) {
+    if (n < 1 || a[0].type != VAL_STRING) return val_null();
+    const char *s = a[0].as.s;
+    while (*s == ' ' || *s == '\t' || *s == '\n') s++;
+    if (*s == '{') {
+        Value dict = val_dict_empty();
+        s++;
+        while (*s && *s != '}') {
+            while (*s == ' ' || *s == ',' || *s == '\t') s++;
+            if (*s != '"') break;
+            s++;
+            char key[128]; int ki = 0;
+            while (*s && *s != '"' && ki < 127) key[ki++] = *s++;
+            key[ki] = '\0'; if (*s == '"') s++;
+            while (*s == ' ' || *s == ':') s++;
+            Value val;
+            if (*s == '"') {
+                s++; char vbuf[256]; int vi = 0;
+                while (*s && *s != '"' && vi < 255) vbuf[vi++] = *s++;
+                vbuf[vi] = '\0'; if (*s == '"') s++;
+                val = val_string(vbuf);
+            } else if (*s == 't') { val = val_bool(1); s+=4; }
+            else if (*s == 'f') { val = val_bool(0); s+=5; }
+            else if (*s == 'n') { val = val_null(); s+=4; }
+            else { val = val_int(atoll(s)); while (*s && *s != ',' && *s != '}') s++; }
+            val_dict_set(&dict, key, val);
+        }
+        return dict;
+    } else if (*s == '[') {
+        Value arr = val_array_empty();
+        s++;
+        while (*s && *s != ']') {
+            while (*s == ' ' || *s == ',' || *s == '\t') s++;
+            if (*s == '"') {
+                s++; char vbuf[256]; int vi = 0;
+                while (*s && *s != '"' && vi < 255) vbuf[vi++] = *s++;
+                vbuf[vi] = '\0'; if (*s == '"') s++;
+                val_array_push(&arr, val_string(vbuf));
+            } else if (*s == 't') { val_array_push(&arr, val_bool(1)); s+=4; }
+            else if (*s == 'f') { val_array_push(&arr, val_bool(0)); s+=5; }
+            else if (*s == 'n') { val_array_push(&arr, val_null()); s+=4; }
+            else if (*s == ']') break;
+            else { val_array_push(&arr, val_int(atoll(s))); while (*s && *s != ',' && *s != ']') s++; }
+        }
+        return arr;
+    }
+    return val_null();
+}
+
+static void stdlib_load_json(Env *env) {
+    env_set(env, "json_encode", val_native(std_json_encode));
+    env_set(env, "json_decode", val_native(std_json_decode));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RANDOM MODULE
+   ═══════════════════════════════════════════════════════════════ */
+#include <stdlib.h>
+#include <time.h>
+
+static int rand_seeded = 0;
+static void ensure_seeded(void) { if (!rand_seeded) { srand((unsigned)time(NULL)); rand_seeded = 1; } }
+
+static Value std_random(Value *a, int n) {
+    ensure_seeded(); (void)a; (void)n;
+    return val_float((double)rand() / RAND_MAX);
+}
+
+static Value std_randint(Value *a, int n) {
+    ensure_seeded();
+    if (n < 2) return val_int(rand());
+    long long lo = a[0].type==VAL_INT ? a[0].as.i : (long long)a[0].as.f;
+    long long hi = a[1].type==VAL_INT ? a[1].as.i : (long long)a[1].as.f;
+    if (hi <= lo) return val_int(lo);
+    return val_int(lo + rand() % (hi - lo + 1));
+}
+
+static Value std_shuffle(Value *a, int n) {
+    ensure_seeded();
+    if (n < 1 || a[0].type != VAL_ARRAY) return val_null();
+    Value arr = a[0];
+    for (int i = arr.as.arr.len - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        Value tmp = arr.as.arr.items[i];
+        arr.as.arr.items[i] = arr.as.arr.items[j];
+        arr.as.arr.items[j] = tmp;
+    }
+    return arr;
+}
+
+static Value std_choice(Value *a, int n) {
+    ensure_seeded();
+    if (n < 1 || a[0].type != VAL_ARRAY || a[0].as.arr.len == 0) return val_null();
+    int idx = rand() % a[0].as.arr.len;
+    return a[0].as.arr.items[idx];
+}
+
+static void stdlib_load_random(Env *env) {
+    env_set(env, "random",  val_native(std_random));
+    env_set(env, "randint", val_native(std_randint));
+    env_set(env, "shuffle", val_native(std_shuffle));
+    env_set(env, "choice",  val_native(std_choice));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HTTP MODULE (simple GET using curl)
+   ═══════════════════════════════════════════════════════════════ */
+
+static Value std_http_get(Value *a, int n) {
+    if (n < 1 || a[0].type != VAL_STRING) return val_null();
+    char cmd[512];
+    snprintf(cmd, 511, "curl -fsSL --max-time 10 \"%s\" 2>/dev/null", a[0].as.s);
+    FILE *f = popen(cmd, "r");
+    if (!f) return val_null();
+    char buf[4096]; int total = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF && total < 4094) buf[total++] = c;
+    buf[total] = '\0';
+    pclose(f);
+    return val_string(buf);
+}
+
+static Value std_time_now(Value *a, int n) {
+    (void)a; (void)n;
+    return val_int((long long)time(NULL));
+}
+
+static void stdlib_load_http(Env *env) {
+    env_set(env, "http_get",  val_native(std_http_get));
+    env_set(env, "time_now",  val_native(std_time_now));
+}
+
