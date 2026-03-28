@@ -1,0 +1,8 @@
+lang
+langserv
+*.o
+test.lang
+hello.lang
+style.css
+test_lexer
+test_parser
