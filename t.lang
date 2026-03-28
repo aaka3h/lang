@@ -1,5 +1,0 @@
-let n = 10
-n += 5
-print n
-let name = "Rex"
-print "Hello {name}"
