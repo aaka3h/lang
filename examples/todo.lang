@@ -1,44 +1,33 @@
-# todo.lang — a simple todo list saved to a file
+# todo.lang — a simple todo list
 
 import "io"
 import "string"
 
 let filename = "todos.txt"
+let todos = []
 
-fn load_todos() {
-    let content = readfile(filename)
-    if content == "" { return [] }
-    return split(content, "\n")
-}
-
-fn save_todos(todos) {
+fn add_todo(item) {
+    push(todos, item)
     writefile(filename, join(todos, "\n"))
+    print "Added: " + item
 }
 
-fn show_todos(todos) {
+fn show_todos() {
     if len(todos) == 0 {
         print "No todos yet!"
         return null
     }
     let i = 0
     while i < len(todos) {
-        print "{i}: {todos[i]}"
+        print str(i) + ": " + todos[i]
         i += 1
     }
 }
 
-fn add_todo(todos, item) {
-    push(todos, item)
-    save_todos(todos)
-    print "Added: {item}"
-}
-
 print "=== Todo List ==="
-let todos = load_todos()
-show_todos(todos)
-add_todo(todos, "Learn Lang")
-add_todo(todos, "Build something cool")
-add_todo(todos, "Go to NTU")
+add_todo("Learn Lang")
+add_todo("Build something cool")
+add_todo("Go to NTU")
 print ""
-print "Updated list:"
-show_todos(todos)
+print "Your todos:"
+show_todos()
