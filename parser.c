@@ -444,6 +444,8 @@ static Node *parse_stmt(Parser *p) {
     if (check(p, TOK_IMPORT)) return parse_import(p);
     if (check(p, TOK_TRY))    return parse_try(p);
     if (check(p, TOK_CLASS))  return parse_class(p);
+    if (check(p, TOK_BREAK))  { Token t=advance(p); return node_alloc(NODE_BREAK, t.line, t.col); }
+    if (check(p, TOK_CONTINUE)){ Token t=advance(p); return node_alloc(NODE_CONTINUE, t.line, t.col); }
     if (check(p, TOK_THROW))  return parse_throw(p);
     if (check(p, TOK_LET))    return parse_let(p);
     if (check(p, TOK_PRINT))  return parse_print(p);
@@ -565,7 +567,7 @@ static Node *parse_addition(Parser *p) {
 static Node *parse_multiplication(Parser *p) {
     Node *left = parse_unary(p);
     while (!p->error &&
-           (check(p, TOK_STAR) || check(p, TOK_SLASH) || check(p, TOK_PERCENT))) {
+           (check(p, TOK_STAR) || check(p, TOK_SLASH) || check(p, TOK_PERCENT) || check(p, TOK_IDIV))) {
         Token op = advance(p);
         Node *right = parse_unary(p);
         if (p->error) break;
@@ -934,6 +936,8 @@ void ast_print(Node *n, int indent) {
             ast_print(n->as.set_attr.value,  indent+1); break;
         case NODE_SELF:
             printf("Self\n"); break;
+        case NODE_BREAK:    printf("Break\n"); break;
+        case NODE_CONTINUE: printf("Continue\n"); break;
         case NODE_SUPER:
             printf("Super(%d args)\n", n->as.super_call.arg_count); break;
         case NODE_TRY:

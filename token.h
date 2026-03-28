@@ -43,12 +43,15 @@ typedef enum {
     TOK_SELF,       /* self                              */
     TOK_EXTENDS,    /* extends                           */
     TOK_SUPER,      /* super                             */
+    TOK_BREAK,      /* break                             */
+    TOK_CONTINUE,   /* continue                          */
 
     /* ── Arithmetic operators ──────────────────────── */
     TOK_PLUS,       /* +                                */
     TOK_MINUS,      /* -                                */
     TOK_STAR,       /* *                                */
     TOK_SLASH,      /* /                                */
+    TOK_IDIV,       /* // (integer division)            */
     TOK_PERCENT,    /* %                                */
 
     /* ── Comparison operators ──────────────────────── */
@@ -128,6 +131,8 @@ static inline const char* token_type_name(TokenType t) {
         case TOK_SELF:      return "SELF";
         case TOK_EXTENDS:   return "EXTENDS";
         case TOK_SUPER:     return "SUPER";
+        case TOK_BREAK:     return "BREAK";
+        case TOK_CONTINUE:  return "CONTINUE";
         case TOK_PLUS:      return "PLUS";
         case TOK_MINUS:     return "MINUS";
         case TOK_STAR:      return "STAR";

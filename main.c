@@ -5,10 +5,10 @@
      gcc -Wall -std=c99 lexer.c parser.c interp.c compiler.c vm_impl.c main2.c -o lang -lm
    
    Usage:
-     ./lang                  → REPL (bytecode VM)
-     ./lang file.lang        → run file (bytecode VM)
+     ./lang                  → REPL (tree interpreter)
+     ./lang file.lang        → run file (tree interpreter)
      ./lang --test           → test suite
-     ./lang --tree file.lang → run with tree-walking interpreter
+     ./lang --vm file.lang   → run with bytecode VM
      ./lang --disasm file.lang → show bytecode then run
    ───────────────────────────────────────────────────────────────── */
 
@@ -344,9 +344,16 @@ int main(int argc, char *argv[]) {
         run_tests();
 
     } else if (argc >= 3 && !strcmp(argv[1], "--tree")) {
+        /* --tree flag: explicit tree interpreter (same as default now) */
         char *src = read_file(argv[2]);
         if (!src) { fprintf(stderr, "Cannot open: %s\n", argv[2]); exit_code=1; }
         else { exit_code = run_tree(src); free(src); }
+
+    } else if (argc >= 3 && !strcmp(argv[1], "--vm")) {
+        /* --vm flag: explicit bytecode VM */
+        char *src = read_file(argv[2]);
+        if (!src) { fprintf(stderr, "Cannot open: %s\n", argv[2]); exit_code=1; }
+        else { exit_code = run_vm(src, 0); free(src); }
 
     } else if (argc >= 3 && !strcmp(argv[1], "--disasm")) {
         char *src = read_file(argv[2]);
@@ -354,9 +361,10 @@ int main(int argc, char *argv[]) {
         else { exit_code = run_vm(src, 1); free(src); }
 
     } else if (argc >= 2) {
+        /* Default: tree interpreter — supports all features */
         char *src = read_file(argv[1]);
         if (!src) { fprintf(stderr, "Cannot open: %s\n", argv[1]); exit_code=1; }
-        else { exit_code = run_vm(src, 0); free(src); }
+        else { exit_code = run_tree(src); free(src); }
 
     } else {
         run_repl();

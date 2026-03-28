@@ -51,6 +51,8 @@ typedef enum {
     NODE_SET_ATTR,  /* obj.field = val         */
     NODE_SELF,      /* self                    */
     NODE_SUPER,     /* super(args)             */
+    NODE_BREAK,     /* break                   */
+    NODE_CONTINUE,  /* continue                */
 
     /* ── Statements ────────────────── */
     NODE_IMPORT,    /* import "module"         */

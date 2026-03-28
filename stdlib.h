@@ -193,6 +193,80 @@ static Value std_indexof(Value *a, int n) {
     return p ? val_int((long long)(p - a[0].as.s)) : val_int(-1);
 }
 
+
+/* format("Hello {0}, you are {1}", name, age) */
+static Value std_format(Value *a, int n) {
+    if (n < 1 || a[0].type != VAL_STRING) return val_null();
+    const char *fmt = a[0].as.s;
+    char result[512]; result[0] = ' ';
+    int ri = 0;
+    while (*fmt && ri < 510) {
+        if (*fmt == '{' && *(fmt+1) >= '0' && *(fmt+1) <= '9' && *(fmt+2) == '}') {
+            int idx = *(fmt+1) - '0' + 1; /* args start at a[1] */
+            if (idx < n) {
+                char tmp[128]; tmp[0] = ' ';
+                Value v = a[idx];
+                if (v.type == VAL_STRING) snprintf(tmp, 127, "%s", v.as.s);
+                else if (v.type == VAL_INT) snprintf(tmp, 127, "%lld", v.as.i);
+                else if (v.type == VAL_FLOAT) snprintf(tmp, 127, "%g", v.as.f);
+                else if (v.type == VAL_BOOL) snprintf(tmp, 127, "%s", v.as.b?"true":"false");
+                else snprintf(tmp, 127, "null");
+                int tlen = (int)strlen(tmp);
+                for (int i=0;i<tlen && ri<510;i++) result[ri++] = tmp[i];
+            }
+            fmt += 3;
+        } else {
+            result[ri++] = *fmt++;
+        }
+    }
+    result[ri] = ' ';
+    return val_string(result);
+}
+
+/* split(str, delim) -> array of strings */
+static Value std_split(Value *a, int n) {
+    if (n < 2 || a[0].type != VAL_STRING || a[1].type != VAL_STRING)
+        return val_null();
+    const char *s = a[0].as.s;
+    const char *delim = a[1].as.s;
+    int dlen = (int)strlen(delim);
+    Value arr = val_array_empty();
+    if (dlen == 0) {
+        /* split into chars */
+        char ch[2] = {0};
+        while (*s) { ch[0] = *s++; val_array_push(&arr, val_string(ch)); }
+        return arr;
+    }
+    char buf[256]; int bi = 0;
+    while (*s) {
+        if (strncmp(s, delim, dlen) == 0) {
+            buf[bi] = ' ';
+            val_array_push(&arr, val_string(buf));
+            bi = 0; s += dlen;
+        } else {
+            if (bi < 254) buf[bi++] = *s;
+            s++;
+        }
+    }
+    buf[bi] = ' ';
+    val_array_push(&arr, val_string(buf));
+    return arr;
+}
+
+/* join(array, sep) -> string */
+static Value std_join(Value *a, int n) {
+    if (n < 2 || a[0].type != VAL_ARRAY || a[1].type != VAL_STRING)
+        return val_null();
+    char result[512]; result[0] = ' ';
+    const char *sep = a[1].as.s;
+    for (int i = 0; i < a[0].as.arr.len; i++) {
+        Value v = a[0].as.arr.items[i];
+        if (v.type == VAL_STRING) strncat(result, v.as.s, 511-strlen(result));
+        if (i < a[0].as.arr.len-1) strncat(result, sep, 511-strlen(result));
+    }
+    return val_string(result);
+}
+
 static void stdlib_load_string(Env *env) {
     env_set(env, "upper",      val_native(std_upper));
     env_set(env, "lower",      val_native(std_lower));
@@ -204,6 +278,9 @@ static void stdlib_load_string(Env *env) {
     env_set(env, "repeat",     val_native(std_repeat));
     env_set(env, "substr",     val_native(std_substr));
     env_set(env, "indexof",    val_native(std_indexof));
+    env_set(env, "format",     val_native(std_format));
+    env_set(env, "split",      val_native(std_split));
+    env_set(env, "join",       val_native(std_join));
 }
 
 /* ─────────────────────────────────────────────────────────────────

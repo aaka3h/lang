@@ -105,6 +105,8 @@ static Keyword KEYWORDS[] = {
     { "self",   TOK_SELF   },
     { "extends", TOK_EXTENDS },
     { "super",  TOK_SUPER  },
+    { "break",   TOK_BREAK   },
+    { "continue",TOK_CONTINUE},
     { NULL,     TOK_ERROR  },   /* sentinel — marks end of table */
 };
 
@@ -257,7 +259,9 @@ Token lexer_next_token(Lexer *l) {
         case '+': return make_token(l, TOK_PLUS,      "+");
         case '-': return make_token(l, TOK_MINUS,     "-");
         case '*': return make_token(l, TOK_STAR,      "*");
-        case '/': return make_token(l, TOK_SLASH,     "/");
+        case '/':
+            if (l->src[l->pos] == '/') { l->pos++; return make_token(l, TOK_IDIV, "//"); }
+            return make_token(l, TOK_SLASH, "/");
         case '%': return make_token(l, TOK_PERCENT,   "%");
         case '(': return make_token(l, TOK_LPAREN,    "(");
         case ')': return make_token(l, TOK_RPAREN,    ")");

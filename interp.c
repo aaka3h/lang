@@ -34,6 +34,8 @@ static Value  g_return_val;
 
 static int    g_throwing  = 0;   /* 1 when a throw/error is in flight */
 static Value  g_throw_val;       /* the thrown value                  */
+static int    g_breaking   = 0;   /* 1 when break is in flight         */
+static int    g_continuing = 0;   /* 1 when continue is in flight      */
 
 /* Set a runtime error — also triggers throw so try/catch can intercept */
 static Value runtime_error(Interpreter *interp, const char *msg) {
@@ -472,6 +474,16 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             return runtime_error(interp, "Cannot index-assign non-array/dict");
         }
 
+        /* ── break ──────────────────────────────────────────── */
+        case NODE_BREAK:
+            g_breaking = 1;
+            return val_null();
+
+        /* ── continue ────────────────────────────────────────── */
+        case NODE_CONTINUE:
+            g_continuing = 1;
+            return val_null();
+
         /* ── super(args) — call parent's init ───────────────── */
         case NODE_SUPER: {
             /* Get current self */
@@ -698,7 +710,7 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             Value last = val_null();
             for (int i = 0; i < node->as.block.count; i++) {
                 last = interp_eval(interp, node->as.block.stmts[i], env);
-                if (interp->error || g_returning) break;
+                if (interp->error || g_returning || g_breaking || g_continuing) break;
             }
             return last;
         }
@@ -723,12 +735,14 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
 
         /* ── while loop ───────────────────────────────────────── */
         case NODE_WHILE: {
-            while (!interp->error && !g_returning) {
+            while (!interp->error && !g_returning && !g_breaking) {
                 Value cond = interp_eval(interp, node->as.while_stmt.cond, env);
                 if (interp->error || !val_truthy(cond)) break;
                 Env *child = env_new(env);
                 interp_eval(interp, node->as.while_stmt.body, child);
                 env_free(child);
+                if (g_breaking) { g_breaking = 0; break; }
+                if (g_continuing) { g_continuing = 0; }
             }
             return val_null();
         }
@@ -737,13 +751,17 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
         case NODE_FOR: {
             Env *loop_env = env_new(env);
             interp_eval(interp, node->as.for_stmt.init, loop_env);
-            while (!interp->error && !g_returning) {
+            while (!interp->error && !g_returning && !g_breaking) {
                 Value cond = interp_eval(interp, node->as.for_stmt.cond, loop_env);
                 if (interp->error || !val_truthy(cond)) break;
                 Env *body_env = env_new(loop_env);
                 interp_eval(interp, node->as.for_stmt.body, body_env);
                 env_free(body_env);
-                if (interp->error || g_returning) break;
+                if (g_breaking) { g_breaking = 0; break; }
+                if (g_continuing) { g_continuing = 0;
+                    interp_eval(interp, node->as.for_stmt.step, loop_env);
+                    continue; }
+                if (interp->error || g_returning || g_breaking || g_continuing) break;
                 interp_eval(interp, node->as.for_stmt.step, loop_env);
             }
             env_free(loop_env);
