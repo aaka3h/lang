@@ -1,0 +1,40 @@
+import "web"
+import "db"
+
+let database = db_open("notes.db")
+db_exec(database, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, body TEXT)")
+
+fn home() {
+    let notes = db_query(database, "SELECT * FROM notes ORDER BY id DESC")
+    let body = "<!DOCTYPE html><html><head><title>Notes</title><link rel='stylesheet' href='/public/style.css'></head><body><nav><a href='/'>All Notes</a> <a href='/new'>New Note</a></nav><h1>My Notes</h1>"
+    if len(notes) == 0 {
+        body = body + "<p class='empty'>No notes yet. <a href='/new'>Add one!</a></p>"
+    }
+    let i = 0
+    while i < len(notes) {
+        let note = notes[i]
+        let t = note["title"]
+        let b = note["body"]
+        body = body + "<div class='note'><h3>" + t + "</h3><p>" + b + "</p></div>"
+        i += 1
+    }
+    body = body + "<a href='/new' class='btn'>+ New Note</a></body></html>"
+    html(body)
+}
+
+fn new_note() {
+    html("<!DOCTYPE html><html><head><title>New Note</title><link rel='stylesheet' href='/public/style.css'></head><body><nav><a href='/'>All Notes</a> <a href='/new'>New Note</a></nav><h2>New Note</h2><form method='POST' action='/save'><label>Title</label><input type='text' name='title' placeholder='Note title'><label>Body</label><textarea name='body' placeholder='Write your note...'></textarea><button class='btn' type='submit'>Save Note</button></form></body></html>")
+}
+
+fn save_note() {
+    db_exec(database, "INSERT INTO notes (title, body) VALUES ('New Note', 'Added from web form')")
+    redirect("/")
+}
+
+route_static("/public", "public")
+route("/", home)
+route("/new", new_note)
+route("/save", save_note)
+
+print "Notes app running at http://localhost:8080"
+serve(8080)
