@@ -22,7 +22,7 @@
 /* ─────────────────────────────────────────────────────────────────
    SHARED STATE  (globals + built-ins, used by both engines)
    ───────────────────────────────────────────────────────────────── */
-static Interpreter g_interp;   /* owns the global Env + built-ins */
+Interpreter g_interp;   /* owns the global Env + built-ins */
 
 static void lang_init(void)  { interp_init(&g_interp); }
 static void lang_free(void)  { interp_free(&g_interp); }
