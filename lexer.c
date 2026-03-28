@@ -103,6 +103,8 @@ static Keyword KEYWORDS[] = {
     { "throw",  TOK_THROW  },
     { "class",  TOK_CLASS  },
     { "self",   TOK_SELF   },
+    { "extends", TOK_EXTENDS },
+    { "super",  TOK_SUPER  },
     { NULL,     TOK_ERROR  },   /* sentinel — marks end of table */
 };
 

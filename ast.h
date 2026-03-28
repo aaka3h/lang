@@ -50,6 +50,7 @@ typedef enum {
     NODE_GET_ATTR,  /* obj.field               */
     NODE_SET_ATTR,  /* obj.field = val         */
     NODE_SELF,      /* self                    */
+    NODE_SUPER,     /* super(args)             */
 
     /* ── Statements ────────────────── */
     NODE_IMPORT,    /* import "module"         */
@@ -179,7 +180,8 @@ struct Node {
         /* NODE_CLASS_DEF */
         struct {
             char  name[MAX_NAME];
-            Node *methods[32];    /* each is a NODE_FN_DEF */
+            char  parent[MAX_NAME];  /* "" if no parent */
+            Node *methods[32];
             int   method_count;
         } class_def;
 
@@ -195,6 +197,12 @@ struct Node {
             char  field[MAX_NAME];
             Node *value;
         } set_attr;
+
+        /* NODE_SUPER — super(args) */
+        struct {
+            Node *args[MAX_ARGS];
+            int   arg_count;
+        } super_call;
 
         /* NODE_PRINT — print expr */
         struct { Node *value; } print_stmt;

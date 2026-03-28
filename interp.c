@@ -472,6 +472,69 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             return runtime_error(interp, "Cannot index-assign non-array/dict");
         }
 
+        /* ── super(args) — call parent's init ───────────────── */
+        case NODE_SUPER: {
+            /* Get current self */
+            Value self_val;
+            if (!env_get(env, "__self__", &self_val))
+                return runtime_error(interp, "super() used outside a method");
+
+            /* Get parent class name */
+            Value parent_name_val;
+            if (!env_get(env, "__parent_class__", &parent_name_val))
+                return runtime_error(interp, "no parent class for super()");
+
+            /* Look up parent class */
+            Value parent_cls;
+            if (!env_get(env, parent_name_val.as.s, &parent_cls))
+                return runtime_error(interp, "parent class not found");
+
+            /* Find parent's init */
+            Value init_fn;
+            int found = 0;
+            for (int i = 0; i < parent_cls.as.cls.mlen; i++) {
+                if (strcmp(parent_cls.as.cls.mkeys[i], "init") == 0) {
+                    init_fn = parent_cls.as.cls.mvals[i];
+                    found = 1; break;
+                }
+            }
+            if (!found) return val_null();
+
+            Node *def = init_fn.as.fn.def;
+            Env *call_env = env_new(init_fn.as.fn.closure);
+
+            int expected = def->as.fn_def.param_count;
+            int got = node->as.super_call.arg_count;
+            if (expected != got) {
+                char msg[128];
+                snprintf(msg, 127, "super() expects %d args got %d", expected, got);
+                return runtime_error(interp, msg);
+            }
+            for (int i = 0; i < expected; i++) {
+                Value a = interp_eval(interp, node->as.super_call.args[i], env);
+                if (interp->error) { env_free(call_env); return val_null(); }
+                env_set(call_env, def->as.fn_def.params[i], a);
+            }
+            env_set(call_env, "__self__", self_val);
+            env_set(call_env, "__self_name__", val_string("__self__"));
+            env_set(call_env, "__parent_class__", parent_name_val);
+
+            interp_eval(interp, def->as.fn_def.body, call_env);
+
+            /* Write updated self back */
+            Value updated;
+            if (env_get(call_env, "__self__", &updated)) {
+                env_assign(env, "__self__", updated);
+                /* Also update original variable */
+                Value orig;
+                if (env_get(env, "__self_name__", &orig) && orig.type == VAL_STRING)
+                    env_assign(env, orig.as.s, updated);
+            }
+            env_free(call_env);
+            if (g_returning) g_returning = 0;
+            return val_null();
+        }
+
         /* ── self ───────────────────────────────────────────── */
         case NODE_SELF: {
             Value self_val;
@@ -524,7 +587,7 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
         }
 
         /* ── class definition ─────────────────────────────────────── */
-        case NODE_CLASS_DEF: {
+        case NODE_CLASS_DEF: {/* parent stored in class_def.parent */
             Value cls;
             cls.type = VAL_CLASS;
             strncpy(cls.as.cls.name, node->as.class_def.name, 127);
@@ -539,6 +602,17 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
                 cls.as.cls.mvals[i] = val_function(m, env);
             }
             env_set(env, node->as.class_def.name, cls);
+
+            /* If this class has a parent, store reference for inheritance */
+            if (node->as.class_def.parent[0] != '\0') {
+                Value parent_cls;
+                if (env_get(env, node->as.class_def.parent, &parent_cls)) {
+                    char parent_key[128];
+                    snprintf(parent_key, 127, "__parent__%s", node->as.class_def.name);
+                    env_set(env, parent_key, parent_cls);
+                }
+            }
+
             return cls;
         }
 
@@ -745,6 +819,12 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
                 env_set(call_env, "__self__", obj);
                 env_set(call_env, "__self_name__",
                     strcmp(obj_name,"__self__")==0 ? val_string("__self__") : val_string(obj_name));
+                /* Pass parent class name for super() */
+                char parent_key2[128];
+                snprintf(parent_key2, 127, "__parent__%s", obj.as.inst.class_name);
+                Value parent_ref;
+                if (env_get(env, parent_key2, &parent_ref))
+                    env_set(call_env, "__parent_class__", val_string(parent_ref.as.cls.name));
 
                 /* Run body */
                 interp_eval(interp, def->as.fn_def.body, call_env);
@@ -782,7 +862,24 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
             /* Class instantiation: ClassName(args) */
             if (fn.type == VAL_CLASS) {
                 Value instance = val_new_instance(fn.as.cls.name);
-                /* Copy all methods into instance */
+
+                /* Copy parent methods first if class has a parent */
+                Value parent_name_v;
+                if (env_get(env, fn.as.cls.name, &parent_name_v)) {
+                    /* look for __parent__ field in class */
+                }
+                /* Check if this class has a parent stored */
+                char parent_key[128];
+                snprintf(parent_key, 127, "__parent__%s", fn.as.cls.name);
+                Value parent_cls_v;
+                if (env_get(env, parent_key, &parent_cls_v) &&
+                    parent_cls_v.type == VAL_CLASS) {
+                    for (int i=0; i<parent_cls_v.as.cls.mlen; i++)
+                        inst_set(&instance, parent_cls_v.as.cls.mkeys[i],
+                                 parent_cls_v.as.cls.mvals[i]);
+                }
+
+                /* Copy child methods (overrides parent) */
                 for (int i=0; i<fn.as.cls.mlen; i++)
                     inst_set(&instance, fn.as.cls.mkeys[i], fn.as.cls.mvals[i]);
 
@@ -806,6 +903,12 @@ Value interp_eval(Interpreter *interp, Node *node, Env *env) {
                     }
                     env_set(call_env, "__self__", instance);
                     env_set(call_env, "__self_name__", val_string("__self__"));
+                    /* Pass parent class for super() in init */
+                    char pk[128];
+                    snprintf(pk, 127, "__parent__%s", fn.as.cls.name);
+                    Value pr;
+                    if (env_get(env, pk, &pr))
+                        env_set(call_env, "__parent_class__", val_string(pr.as.cls.name));
                     interp_eval(interp, def->as.fn_def.body, call_env);
                     Value updated;
                     if (env_get(call_env, "__self__", &updated))

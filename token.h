@@ -41,6 +41,8 @@ typedef enum {
     TOK_THROW,      /* throw                             */
     TOK_CLASS,      /* class                             */
     TOK_SELF,       /* self                              */
+    TOK_EXTENDS,    /* extends                           */
+    TOK_SUPER,      /* super                             */
 
     /* ── Arithmetic operators ──────────────────────── */
     TOK_PLUS,       /* +                                */
@@ -124,6 +126,8 @@ static inline const char* token_type_name(TokenType t) {
         case TOK_THROW:     return "THROW";
         case TOK_CLASS:     return "CLASS";
         case TOK_SELF:      return "SELF";
+        case TOK_EXTENDS:   return "EXTENDS";
+        case TOK_SUPER:     return "SUPER";
         case TOK_PLUS:      return "PLUS";
         case TOK_MINUS:     return "MINUS";
         case TOK_STAR:      return "STAR";

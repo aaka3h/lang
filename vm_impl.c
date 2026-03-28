@@ -137,6 +137,11 @@ void vm_run(VM *vm, int chunk_idx) {
 
             /* ── Variable access ────────────────────────────── */
             case OP_LOAD: {
+                /* __import__ is handled specially in OP_CALL */
+                if (strcmp(ins->name, "__import__") == 0) {
+                    push(vm, val_null());
+                    break;
+                }
                 Value v;
                 if (!env_get(f->env, ins->name, &v)) {
                     char msg[128];
@@ -243,6 +248,20 @@ void vm_run(VM *vm, int chunk_idx) {
             /* ── Function call ──────────────────────────────── */
             case OP_CALL: {
                 int arg_count = ins->operand;
+
+                /* Handle import directly */
+                if (strcmp(ins->name, "__import__") == 0) {
+                    Value mod_arg = pop(vm);
+                    if (mod_arg.type == VAL_STRING) {
+                        if (!stdlib_import(f->env, mod_arg.as.s)) {
+                            char msg[128];
+                            snprintf(msg, 127, "Unknown module '%s'", mod_arg.as.s);
+                            vm_error(vm, msg);
+                        }
+                    }
+                    push(vm, val_null());
+                    break;
+                }
 
                 /* Look up the function */
                 Value fn;

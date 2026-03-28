@@ -380,12 +380,21 @@ static Node *parse_throw(Parser *p) {
 static Node *parse_class(Parser *p) {
     Token kw = advance(p);  /* consume 'class' */
     Token name = expect(p, TOK_IDENT, "class name");
-    expect(p, TOK_LBRACE, "'{'");
-    skip_newlines(p);
 
     Node *n = node_alloc(NODE_CLASS_DEF, kw.line, kw.col);
     strncpy(n->as.class_def.name, name.value, MAX_NAME-1);
+    n->as.class_def.parent[0] = '\0';
     n->as.class_def.method_count = 0;
+
+    /* optional: extends ParentClass */
+    if (check(p, TOK_EXTENDS)) {
+        advance(p);
+        Token parent = expect(p, TOK_IDENT, "parent class name");
+        strncpy(n->as.class_def.parent, parent.value, MAX_NAME-1);
+    }
+
+    expect(p, TOK_LBRACE, "'{'");
+    skip_newlines(p);
 
     while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF) && !p->error) {
         skip_newlines(p);
@@ -738,6 +747,21 @@ static Node *parse_primary(Parser *p) {
         return n;
     }
 
+    /* super(args) call */
+    if (t.type == TOK_SUPER) {
+        Token kw = advance(p);
+        expect(p, TOK_LPAREN, "'('");
+        Node *n = node_alloc(NODE_SUPER, kw.line, kw.col);
+        n->as.super_call.arg_count = 0;
+        if (!check(p, TOK_RPAREN)) {
+            n->as.super_call.args[n->as.super_call.arg_count++] = parse_expr(p);
+            while (!p->error && match(p, TOK_COMMA))
+                n->as.super_call.args[n->as.super_call.arg_count++] = parse_expr(p);
+        }
+        expect(p, TOK_RPAREN, "')'");
+        return n;
+    }
+
     /* self keyword */
     if (t.type == TOK_SELF) {
         advance(p);
@@ -910,6 +934,8 @@ void ast_print(Node *n, int indent) {
             ast_print(n->as.set_attr.value,  indent+1); break;
         case NODE_SELF:
             printf("Self\n"); break;
+        case NODE_SUPER:
+            printf("Super(%d args)\n", n->as.super_call.arg_count); break;
         case NODE_TRY:
             printf("Try(catch=%s)\n", n->as.try_stmt.err_name);
             ast_print(n->as.try_stmt.try_block,   indent+1);
