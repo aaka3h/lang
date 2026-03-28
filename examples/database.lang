@@ -6,7 +6,7 @@ let d = db_open("myapp.db")
 db_exec(d, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, body TEXT)")
 db_exec(d, "INSERT INTO notes (title, body) VALUES ('Hello', 'First note!')")
 db_exec(d, "INSERT INTO notes (title, body) VALUES ('Lang', 'Built in C')")
-db_exec(d, "INSERT INTO notes (title, body) VALUES ('NTU', 'Starting soon!')")
+db_exec(d, "INSERT INTO notes (title, body) VALUES ('Singapore', 'New chapter!')")
 
 let notes = db_query(d, "SELECT * FROM notes")
 print "All notes:"

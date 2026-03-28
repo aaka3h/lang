@@ -27,7 +27,7 @@ fn show_todos() {
 print "=== Todo List ==="
 add_todo("Learn Lang")
 add_todo("Build something cool")
-add_todo("Go to NTU")
+add_todo("Ship more projects")
 print ""
 print "Your todos:"
 show_todos()
