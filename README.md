@@ -1,38 +1,14 @@
 # Lang
 
-A programming language built from scratch in C.
-
-Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
-
-## Features
-
-- Lexer, recursive descent parser, AST
-- Bytecode compiler + stack VM
-- Tree-walking interpreter
-- Variables, strings, booleans, null
-- Arrays with negative indexing `arr[-1]`
-- Dictionaries
-- Classes, inheritance, super()
-- try / catch / throw
-- break and continue
-- Integer division `//`
-- Compound assignment `+=` `-=` `*=` `/=`
-- String interpolation `"Hello {name}"`
-- Multi-line strings `"""..."""`
-- User-defined modules `import "myfile.lang"`
-- else if chains
-- Accurate error messages with line numbers
-- Built-in static analyzer (lint module)
-- Standard library: math, string, io, sys, lint
-- Interactive REPL
+A programming language built from scratch in C — with a built-in web framework.
 
 ## Install
 
     curl -fsSL https://raw.githubusercontent.com/aaka3h/lang/main/install.sh | bash
 
-## Build (from source)
+## Build from source
 
-    gcc -Wall -std=c99 -O2 lexer.c parser.c interp.c compiler.c vm_impl.c main.c -o lang -lm
+    gcc -Wall -std=c99 -O2 lexer.c parser.c interp.c compiler.c vm_impl.c langweb.c main.c -o lang -lm
     sudo cp lang /usr/local/bin/lang
 
 ## Usage
@@ -40,9 +16,27 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     lang                     # REPL
     lang file.lang           # run a file
     lang --disasm file.lang  # show bytecode
-    lang --vm file.lang      # run with bytecode VM
 
-## Syntax
+## Web Server
+
+    import "web"
+
+    fn home() {
+        html("<h1>Hello from Lang!</h1>")
+    }
+
+    fn api() {
+        import "json"
+        json_response(json_encode({"status": "ok", "lang": "awesome"}))
+    }
+
+    route("/", home)
+    route("/api", api)
+    serve(8080)
+
+Run with `lang app.lang` — visit http://localhost:8080
+
+## Language Features
 
     # Variables
     let x = 42
@@ -51,20 +45,13 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     # String interpolation
     print "Hello {name}!"
 
-    # Multi-line strings
-    let text = """line one
-    line two
-    line three"""
-
     # Compound assignment
     let n = 10
     n += 5
-    n *= 2
 
-    # Functions
-    fn add(a, b) {
-        return a + b
-    }
+    # Multi-line strings
+    let text = """line one
+    line two"""
 
     # if / else if / else
     if x == 1 { print "one" }
@@ -78,14 +65,18 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
         i += 1
     }
 
-    # Arrays
+    # Functions
+    fn add(a, b) {
+        return a + b
+    }
+
+    # Arrays with negative indexing
     let nums = [1, 2, 3]
     push(nums, 4)
     print nums[-1]
 
     # Dictionaries
     let person = {"name": "Lang", "version": 2}
-    print person["name"]
 
     # Classes and inheritance
     class Animal {
@@ -103,7 +94,7 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
 
     # Error handling
     try {
-        throw "something went wrong"
+        throw "oops"
     } catch (err) {
         print "caught: " + err
     }
@@ -111,16 +102,17 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
     # User modules
     import "myutils.lang"
 
-## Modules
+## Standard Library
 
     import "math"    # sin cos tan sqrt pi e
-    import "string"  # upper lower trim replace split join format
+    import "string"  # upper lower trim split join format
     import "io"      # readfile writefile input
     import "sys"     # clock exit
-    import "lint"    # built-in static code analyzer
+    import "lint"    # static code analyzer
     import "json"    # json_encode json_decode
     import "random"  # random randint shuffle choice
     import "http"    # http_get time_now
+    import "web"     # route serve html json_response
 
 ## Architecture
 
@@ -128,4 +120,4 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
                                           ↓
                                        Compiler → Bytecode → VM → Output
 
-Built from scratch. No libraries. Every phase hand-written in C.
+Built from scratch. No libraries.
