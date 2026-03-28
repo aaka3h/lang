@@ -1,0 +1,30 @@
+# guess.lang — number guessing game
+
+import "random"
+
+let secret = randint(1, 100)
+let attempts = 0
+let max_attempts = 7
+
+print "=== Number Guessing Game ==="
+print "Guess a number between 1 and 100"
+print "You have {max_attempts} attempts"
+print ""
+
+while attempts < max_attempts {
+    let guess = int(input("Your guess: "))
+    attempts += 1
+
+    if guess == secret {
+        print "Correct! You got it in {attempts} attempts!"
+        break
+    } else if guess < secret {
+        print "Too low! {max_attempts - attempts} attempts left"
+    } else {
+        print "Too high! {max_attempts - attempts} attempts left"
+    }
+}
+
+if attempts == max_attempts {
+    print "Game over! The number was {secret}"
+}

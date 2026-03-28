@@ -1,0 +1,34 @@
+# calculator.lang — OOP calculator
+
+class Calculator {
+    fn init() {
+        self.result = 0
+        self.ops = 0
+    }
+
+    fn add(n) {
+        self.result = self.result + n
+        self.ops = self.ops + 1
+    }
+
+    fn sub(n) {
+        self.result = self.result - n
+        self.ops = self.ops + 1
+    }
+
+    fn mul(n) {
+        self.result = self.result * n
+        self.ops = self.ops + 1
+    }
+
+    fn show() {
+        print "Result: " + str(self.result)
+        print "Operations: " + str(self.ops)
+    }
+}
+
+let calc = Calculator()
+calc.add(10)
+calc.mul(5)
+calc.sub(8)
+calc.show()

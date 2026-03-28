@@ -1,0 +1,47 @@
+# webapp.lang — simple web app
+# Run: lang webapp.lang
+# Visit: http://localhost:8080
+
+import "web"
+import "json"
+import "random"
+import "http"
+
+fn home() {
+    html("""<!DOCTYPE html>
+<html>
+<head>
+    <title>Lang Web App</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 50px auto;
+               background: #1e1e2e; color: #cdd6f4; }
+        h1 { color: #89b4fa; }
+        a { color: #a6e3a1; }
+        .card { background: #313244; padding: 20px; border-radius: 8px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Hello from Lang!</h1>
+    <div class="card">
+        <p>A web server written in a custom programming language built in C.</p>
+        <p><a href="/api">JSON API</a> | <a href="/random">Random Number</a></p>
+    </div>
+</body>
+</html>""")
+}
+
+fn api() {
+    let t = time_now()
+    json_response(json_encode({"status": "ok", "time": t, "language": "Lang"}))
+}
+
+fn random_page() {
+    let n = randint(1, 1000)
+    html("<h1>Random: {n}</h1><a href='/random'>Again</a> | <a href='/'>Home</a>")
+}
+
+route("/", home)
+route("/api", api)
+route("/random", random_page)
+
+serve(8080)
