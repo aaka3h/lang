@@ -26,7 +26,11 @@ Full pipeline: lexer → parser → AST → bytecode compiler → stack VM.
 - Standard library: math, string, io, sys, lint
 - Interactive REPL
 
-## Build
+## Install
+
+    curl -fsSL https://raw.githubusercontent.com/aaka3h/lang/main/install.sh | bash
+
+## Build (from source)
 
     gcc -Wall -std=c99 -O2 lexer.c parser.c interp.c compiler.c vm_impl.c main.c -o lang -lm
     sudo cp lang /usr/local/bin/lang
