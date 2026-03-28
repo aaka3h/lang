@@ -121,3 +121,29 @@ Run with `lang app.lang` — visit http://localhost:8080
                                        Compiler → Bytecode → VM → Output
 
 Built from scratch. No libraries.
+
+## Database
+
+    import "db"
+
+    let d = db_open("app.db")
+    db_exec(d, "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT)")
+    db_exec(d, "INSERT INTO notes (title) VALUES ('Hello Lang')")
+
+    let rows = db_query(d, "SELECT * FROM notes")
+    let note = rows[0]
+    print note["title"]
+
+    db_close(d)
+
+## Example Apps
+
+See the `examples/` folder:
+
+- `fibonacci.lang` — recursion
+- `calculator.lang` — classes and OOP
+- `todo.lang` — arrays and file I/O
+- `guess.lang` — random numbers and input
+- `webapp.lang` — web server
+- `database.lang` — SQLite
+- `notes/` — full notes app with web + database + static CSS
